@@ -57,11 +57,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Static stdlib helper, parser tests and attack tests passed under runc/runsc, including ioctl-verified foreground TTY and second-sandbox health. make check, test-integration and test-escape passed; runsc /proc tpgid quirk documented in docs/spikes/002-process-termination.md.
 
-### [ ] T0.4 Spike: workspace backends and exec-based file transfer
+### [x] T0.4 Spike: workspace backends and exec-based file transfer
 - **Deps:** T0.2
 - **Do:** Under runsc: (a) named volume at `/workspace`; stream a tar in and out through exec (`tar -xzf -` / `tar -czf -`); confirm contents round-trip. (b) tmpfs `/workspace` with a size limit; confirm ENOSPC at the limit. (c) Confirm read-only rootfs + tmpfs `/tmp` and `/run/sbx`. (d) Verify that files written inside the sandbox can be read and archived back through exec with identical contents, confirming the chosen transfer path for PRD R1. (e) Measure `du -sb /workspace` cost on a 10k-file tree.
 - **Acceptance:** `docs/spikes/003-workspace.md` with results and recommended watchdog interval.
 - **Verify:** document exists.
+
+> Done: Named-volume binary/archive round trips through exec, rootfs/tmpfs checks and workspace ENOSPC passed under runsc; 10k-file du measured at 547–644 ms, retaining the 15s watchdog interval. make check, test-integration and test-escape passed; findings in docs/spikes/003-workspace.md.
 
 ### [ ] T0.5 Spike: allowlist networking topology
 - **Deps:** T0.2
