@@ -28,7 +28,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Phase 0 — Foundations and spikes
 
-### [ ] T0.1 Repository scaffold
+### [x] T0.1 Repository scaffold
 - **Deps:** none
 - **Do:**
   - `go mod init github.com/brendatamaar/arcana`; directory layout from `AGENTS.md`.
@@ -39,6 +39,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - GitHub Actions `ci.yml`: Go setup, `make check`, on push and pull request.
 - **Acceptance:** `make check` passes locally and in CI; `arcana version` prints version, commit and build date.
 - **Verify:** `make check && go run ./cmd/arcana version`
+> Done: Repository scaffold, version metadata, Make targets, lint configuration and CI added. Local make check and version checks passed; CI candidate dd198bd passed (https://github.com/brendatamaar/arcana/actions/runs/41220302481). Runtime spikes will use the owner-authorized Linux VPS.
 
 ### [ ] T0.2 Spike: Docker + runsc lifecycle and exec streaming
 - **Deps:** T0.1
@@ -54,7 +55,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ### [ ] T0.4 Spike: workspace backends and exec-based file transfer
 - **Deps:** T0.2
-- **Do:** Under runsc: (a) named volume at `/workspace`; stream a tar in and out through exec (`tar -xzf -` / `tar -czf -`); confirm contents round-trip. (b) tmpfs `/workspace` with a size limit; confirm ENOSPC at the limit. (c) Confirm read-only rootfs + tmpfs `/tmp` and `/run/sbx`. (d) Check how `docker cp` and `docker commit` behave with runsc overlay to confirm PRD R1. (e) Measure `du -sb /workspace` cost on a 10k-file tree.
+- **Do:** Under runsc: (a) named volume at `/workspace`; stream a tar in and out through exec (`tar -xzf -` / `tar -czf -`); confirm contents round-trip. (b) tmpfs `/workspace` with a size limit; confirm ENOSPC at the limit. (c) Confirm read-only rootfs + tmpfs `/tmp` and `/run/sbx`. (d) Verify that files written inside the sandbox can be read and archived back through exec with identical contents, confirming the chosen transfer path for PRD R1. (e) Measure `du -sb /workspace` cost on a 10k-file tree.
 - **Acceptance:** `docs/spikes/003-workspace.md` with results and recommended watchdog interval.
 - **Verify:** document exists.
 
@@ -352,8 +353,11 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-10-13 — Minimal read-only React dashboard moved from stretch into v0.3 — makes the demo understandable at a glance; read-only keeps CSRF out of scope until T4.4 — PRD §7.14
 - 2026-10-13 — Dashboard uses cookie sessions limited to safe methods, SSE for live data — no API key in browser storage, `EventSource` works with cookies — PRD FR-WD-4…7
 
+- 2026-10-31 — Owner approved replacing T0.4(d) docker cp/docker commit experiments with exec-only read/archive round trips — validates the supported transfer path while preserving AGENTS security rule 4 and PRD FR-FS-4 — PLAN T0.4, PRD R1
+
 ## Open questions
 
 Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
 
-- (none)
+- 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI still needs to run for T0.1.
+- 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.
