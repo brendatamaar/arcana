@@ -16,7 +16,6 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.14.0
-          args: --version
       - run: make check
       - run: CGO_ENABLED=0 make build
       - run: ./bin/arcana version
