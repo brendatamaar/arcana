@@ -65,11 +65,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Named-volume binary/archive round trips through exec, rootfs/tmpfs checks and workspace ENOSPC passed under runsc; 10k-file du measured at 547–644 ms, retaining the 15s watchdog interval. make check, test-integration and test-escape passed; findings in docs/spikes/003-workspace.md.
 
-### [ ] T0.5 Spike: allowlist networking topology
+### [x] T0.5 Spike: allowlist networking topology
 - **Deps:** T0.2
 - **Do:** Create an internal Docker network with an explicit /28 subnet, attach a runsc sandbox and a proxy container (simple Go `CONNECT` proxy) that is also attached to a normal bridge network. Confirm: sandbox reaches an allowlisted host only through the proxy; direct TCP fails; `169.254.169.254` unreachable; a second sandbox on a different internal network is unreachable. Note any DNS behaviour on internal networks.
 - **Acceptance:** `docs/spikes/004-network.md` with topology diagram, results and recommended design.
 - **Verify:** document exists.
+
+> Done: Internal /28 topology passed CONNECT allow/deny, direct internet/metadata denial and live second-sandbox isolation under runsc. DNS and pre-start interface requirements recorded in docs/spikes/004-network.md and PRD; make check, test-integration and test-escape passed.
 
 ### [ ] T0.6 Record decisions
 - **Deps:** T0.2–T0.5
@@ -362,6 +364,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-10-31 — Owner approved replacing T0.4(d) docker cp/docker commit experiments with exec-only read/archive round trips — validates the supported transfer path while preserving AGENTS security rule 4 and PRD FR-FS-4 — PLAN T0.4, PRD R1
 
 - 2026-10-31 — Temporary spikes/ module for Phase 0 programs; use the official github.com/moby/moby/client successor module — isolates throwaway dependencies from the production module; removed by T0.6 — T0.2
+
+- 2026-11-01 — Configure explicit outbound DNS for the proxy and attach all runsc proxy interfaces before start; recreate it when interfaces change — T0.5 verified Docker embedded DNS and hot-attached runsc interfaces do not work in this setup; internal sandbox isolation remains unchanged — docs/spikes/004-network.md, PRD FR-NW-2 and §13
 
 ## Open questions
 

@@ -130,7 +130,7 @@ Requirement tags below (`[v0.1]`, `[v0.2]`, …) state the release in which each
 ### 7.5 Network (NW)
 
 - **FR-NW-1 [v0.1]** Mode `none` (default): the sandbox has no network interfaces besides loopback.
-- **FR-NW-2 [v0.2]** Mode `allowlist`: the sandbox is attached to its own internal Docker network (no route out). An egress proxy (Arcana running in `proxy` mode in a dedicated container) is attached to that network and to an outbound network. Sandboxes receive `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` variables. Direct connections fail because there is no route.
+- **FR-NW-2 [v0.2]** Mode `allowlist`: the sandbox is attached to its own internal Docker network (no route out). An egress proxy (Arcana running in `proxy` mode in a dedicated container) is attached to that network and to an outbound network. Sandboxes receive `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` variables. Direct connections fail because there is no route. For a runsc proxy, attach its complete network set before starting it; recreate it when that set changes. The proxy uses explicit operator-configured DNS upstreams on its outbound network rather than relying on Docker embedded DNS (validated in T0.5).
 - **FR-NW-3 [v0.2]** The proxy allows only hostnames on the sandbox's allowlist. HTTPS is handled through `CONNECT` without TLS interception; plain HTTP by `Host` header.
 - **FR-NW-4 [v0.2]** SSRF protection: after DNS resolution the proxy rejects private, loopback, link-local (including `169.254.169.254`), multicast and unique-local addresses, and connects to the already-resolved IP to prevent DNS rebinding.
 - **FR-NW-5 [v0.2]** Per-sandbox networks get subnets from Arcana's own pool (`network.subnet_pool`, `network.subnet_prefix`) to avoid exhausting Docker's default address pools.
@@ -698,6 +698,7 @@ network:                          # allowlist mode is v0.2
   subnet_prefix: 28
   max_allow_entries: 50
   proxy_image: ghcr.io/brendatamaar/arcana:latest
+  proxy_dns: [1.1.1.1, 1.0.0.1]   # outbound proxy only; operator configurable
   presets:
     python: [pypi.org, files.pythonhosted.org]
     node: [registry.npmjs.org]
