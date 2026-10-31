@@ -73,11 +73,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Internal /28 topology passed CONNECT allow/deny, direct internet/metadata denial and live second-sandbox isolation under runsc. DNS and pre-start interface requirements recorded in docs/spikes/004-network.md and PRD; make check, test-integration and test-escape passed.
 
-### [ ] T0.6 Record decisions
+### [x] T0.6 Record decisions
 - **Deps:** T0.2–T0.5
 - **Do:** Write ADRs in `docs/decisions/` (`0001-runtime-docker-runsc.md`, `0002-exec-helper.md`, `0003-workspace-and-files.md`, `0004-network-egress.md`). Update `PRD.md` wherever spikes changed the design. Delete `spikes/` code (keep the docs).
 - **Acceptance:** ADRs exist; PRD consistent with findings; Decision log below updated.
 - **Verify:** `make check`
+> Done: ADRs 0001–0004 recorded; PRD DNS/interface details and exec-only spike scope are consistent with findings. Temporary spikes/ code and dependencies removed; prototype helper and reusable tests retained. Final VPS make check, test-integration, test-escape, static build and version checks passed; no spike containers, networks or volumes remain.
 
 ---
 
@@ -367,9 +368,11 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-01 — Configure explicit outbound DNS for the proxy and attach all runsc proxy interfaces before start; recreate it when interfaces change — T0.5 verified Docker embedded DNS and hot-attached runsc interfaces do not work in this setup; internal sandbox isolation remains unchanged — docs/spikes/004-network.md, PRD FR-NW-2 and §13
 
+- 2026-11-01 — Accept ADRs 0001–0004 and remove the temporary spikes/ module — risk probes support Docker/runsc, helper bind mounts, exec-only transfer and internal-network egress; prototype helper and reusable integration fixtures remain for later hardening — docs/decisions/
+
 ## Open questions
 
 Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
 
-- 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI still needs to run for T0.1.
+- 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI passed for T0.1.
 - 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.

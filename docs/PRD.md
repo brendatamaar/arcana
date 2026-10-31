@@ -6,7 +6,7 @@
 |---|---|
 | Status | Draft 1.0 |
 | Owner | @brendatamaar |
-| Last updated | 2026-10-13 |
+| Last updated | 2026-11-01 |
 | License | Apache-2.0 |
 | Go module | `github.com/brendatamaar/arcana` |
 | Companion docs | `PLAN.md` (execution order and status), `AGENTS.md` (how to work in this repo) |
