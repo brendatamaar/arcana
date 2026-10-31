@@ -41,11 +41,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - **Verify:** `make check && go run ./cmd/arcana version`
 > Done: Repository scaffold, version metadata, Make targets, lint configuration and CI added. Local make check and version checks passed; CI candidate dd198bd passed (https://github.com/brendatamaar/arcana/actions/runs/41220302481). Runtime spikes will use the owner-authorized Linux VPS.
 
-### [ ] T0.2 Spike: Docker + runsc lifecycle and exec streaming
+### [x] T0.2 Spike: Docker + runsc lifecycle and exec streaming
 - **Deps:** T0.1
 - **Do:** Throwaway program in `spikes/001-runsc-exec/` using the official Docker Go client: create and start a container with `Runtime: "runsc"` and the hardening flags from PRD FR-RL-2, run an exec with attached stdout/stderr (demultiplexed) and stdin, run a TTY exec with resize, then destroy. Measure cold create time (20 runs, p50/p95) for runc and runsc.
 - **Acceptance:** `docs/spikes/001-runsc-exec.md` records: what works, API quirks, measured timings, and whether PRD §8.2 targets look realistic.
 - **Verify:** document exists and includes a timing table.
+
+> Done: Official Moby client lifecycle, attached demux/stdin and TTY resize passed under runc and runsc; 20 sequential timings per runtime recorded in docs/spikes/001-runsc-exec.md. VPS make check, test-integration and test-escape targets passed; the latter two remain scaffold targets until the real suites are introduced.
 
 ### [ ] T0.3 Spike: process-tree termination with `sbx-exec`
 - **Deps:** T0.2
@@ -354,6 +356,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-10-13 — Dashboard uses cookie sessions limited to safe methods, SSE for live data — no API key in browser storage, `EventSource` works with cookies — PRD FR-WD-4…7
 
 - 2026-10-31 — Owner approved replacing T0.4(d) docker cp/docker commit experiments with exec-only read/archive round trips — validates the supported transfer path while preserving AGENTS security rule 4 and PRD FR-FS-4 — PLAN T0.4, PRD R1
+
+- 2026-10-31 — Temporary spikes/ module for Phase 0 programs; use the official github.com/moby/moby/client successor module — isolates throwaway dependencies from the production module; removed by T0.6 — T0.2
 
 ## Open questions
 
