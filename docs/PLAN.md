@@ -49,11 +49,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Official Moby client lifecycle, attached demux/stdin and TTY resize passed under runc and runsc; 20 sequential timings per runtime recorded in docs/spikes/001-runsc-exec.md. VPS make check, test-integration and test-escape targets passed; the latter two remain scaffold targets until the real suites are introduced.
 
-### [ ] T0.3 Spike: process-tree termination with `sbx-exec`
+### [x] T0.3 Spike: process-tree termination with `sbx-exec`
 - **Deps:** T0.2
 - **Do:** Minimal `cmd/sbx-exec` prototype (static, `CGO_ENABLED=0`) implementing `run`, `kill` and `status` per PRD §9.4. Bind-mount it read-only into a runsc container. Test: a command that spawns children and ignores SIGTERM is fully killed on timeout and on `kill`; TTY mode keeps job control working (`Setpgid` + `Foreground` + `Ctty` in `SysProcAttr`). Repeat under runc. If the bind mount misbehaves under runsc, test the fallback of copying the helper in through exec + tar (PRD R5).
 - **Acceptance:** `docs/spikes/002-process-termination.md` with results for runsc and runc, chosen mechanism, and any PRD changes.
 - **Verify:** document exists; prototype tests pass.
+
+> Done: Static stdlib helper, parser tests and attack tests passed under runc/runsc, including ioctl-verified foreground TTY and second-sandbox health. make check, test-integration and test-escape passed; runsc /proc tpgid quirk documented in docs/spikes/002-process-termination.md.
 
 ### [ ] T0.4 Spike: workspace backends and exec-based file transfer
 - **Deps:** T0.2
