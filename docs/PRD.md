@@ -781,7 +781,7 @@ A Grafana dashboard JSON lives in `deploy/grafana/` and is provisioned by the Co
 
 | # | Risk / question | Mitigation / plan |
 |---|---|---|
-| R1 | gVisor's rootfs overlay may hide in-sandbox writes from Docker (`docker cp`, `docker commit`) | Design already avoids both: files and snapshots go through exec; verify in spike T0.4 |
+| R1 | gVisor's rootfs overlay may hide in-sandbox writes from Docker (`docker cp`, `docker commit`) | Design avoids both: files and snapshots go through exec; verify byte-identical exec read/archive round trips in spike T0.4 |
 | R2 | Docker exec cannot signal processes | `sbx-exec` helper (§9.4); verify under runsc and runc in spike T0.3 |
 | R3 | Volume disk quotas not portable | Watchdog plus optional tmpfs backend; documented as soft limit |
 | R4 | Docker network address pool exhaustion | Own subnet allocator with small prefixes (FR-NW-5) |
