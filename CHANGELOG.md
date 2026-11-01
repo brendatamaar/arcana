@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the runtime driver contract and a bounded, scripted fake for deterministic orchestration tests.
+
 - Add the v0.1 OpenAPI contract, authenticated HTTP server and serve command with bounded requests and graceful shutdown.
 
 - Add hashed API keys, one-time private admin bootstrap, bearer/admin middleware and local key-management commands.

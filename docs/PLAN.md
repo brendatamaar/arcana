@@ -124,11 +124,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Validated v0.1 OpenAPI contract, pinned standard HTTP generation, auth/request IDs/body caps/recovery/JSON helpers, key endpoints and protected 501 stubs added. serve bootstraps admin and drains on cancellation/SIGTERM. make generate verify-generated, API tests and make check passed; Linux CGO_ENABLED=0 build, actual SIGTERM/private-key checks, auth/API race tests and retained integration/escape suites passed on the authorized VPS. API coverage 84.2%; web-check deferred by owner until T3.7.
 
-### [ ] T1.6 Runtime driver interface and fake driver
+### [x] T1.6 Runtime driver interface and fake driver
 - **Deps:** T1.1 · **PRD:** §9.3
 - **Do:** `internal/runtime` with `Driver`, `Spec`, `Instance`, `ExecRequest`, `ExecSession`, `ExitInfo`, `Stats`, `Capabilities`. `internal/runtime/fake`: in-memory driver that can script exec output, exit codes, delays and failures, for orchestrator unit tests.
 - **Acceptance:** fake driver satisfies the interface with compile-time assertion; fake has its own tests.
 - **Verify:** `go test ./internal/runtime/...`
+
+> Done: Shared driver/session/spec/resource types and typed runtime errors added. The concurrency-safe fake scripts streams, exits, failures and channel-controlled delays, bounds recorded data/instances/scripts, clones mutable inputs and cancels sessions on destroy. Runtime race tests, make check and VPS integration/escape suites passed.
 
 ### [ ] T1.7 Docker driver
 - **Deps:** T1.6 · **PRD:** FR-RL-1, FR-RL-2, FR-RL-3, §9.5, FR-DR-3
