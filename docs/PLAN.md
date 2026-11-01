@@ -108,11 +108,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Embedded goose migration, pure-Go SQLite with per-connection WAL/foreign keys/5s busy timeout and one writer, atomic installation ID, pinned sqlc tool and bounded generated queries added. make generate, store tests, CGO_ENABLED=0 store tests and make check passed; stale-source probe correctly failed verify-generated; store coverage 75.5% excluding generated code.
 
-### [ ] T1.4 API keys and auth
+### [x] T1.4 API keys and auth
 - **Deps:** T1.2, T1.3 · **PRD:** FR-AU-1…5
 - **Do:** `internal/auth`: key generation (`arc_live_` + 32 base62 chars), SHA-256 hashing, constant-time comparison, prefix display, `last_used_at` update (debounced), admin flag; bootstrap admin key on empty DB (print once, write `data_dir/admin.key` with `0600`); HTTP middleware putting the principal in context; `arcana keys create|list|revoke` operating on the local DB.
 - **Acceptance:** revoked keys rejected; non-admin cannot call admin endpoints; bootstrap happens exactly once; key never appears in logs.
 - **Verify:** `go test ./internal/auth/...`
+
+> Done: Added unbiased base62 keys, SHA-256 storage and constant-time verification, immediate revocation with debounced usage timestamps, serialized one-time admin bootstrap, bearer/admin middleware and local keys CLI. Auth/CLI tests, bootstrap mutation/fuzz checks, make check and CGO_ENABLED=0 make build passed. Native absolute host data paths are accepted; sandbox roots retain POSIX validation. Bootstrap is wired into serve by T1.5.
 
 ### [ ] T1.5 OpenAPI spec and HTTP server skeleton
 - **Deps:** T1.2, T1.4 · **PRD:** §10

@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -191,7 +192,7 @@ func (c Config) Validate() error {
 			bad(field, "must be host:port with port 1..65535")
 		}
 	}
-	if !path.IsAbs(c.DataDir) {
+	if !path.IsAbs(c.DataDir) && !filepath.IsAbs(c.DataDir) {
 		bad("data_dir", "must be absolute")
 	}
 	if c.Runtime.Driver != "docker" {
