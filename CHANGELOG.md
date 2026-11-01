@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the hardened Docker/runsc driver, bounded exec streaming, volume/tmpfs workspaces and a minimal locally built base image.
+
 - Add the runtime driver contract and a bounded, scripted fake for deterministic orchestration tests.
 
 - Add the v0.1 OpenAPI contract, authenticated HTTP server and serve command with bounded requests and graceful shutdown.

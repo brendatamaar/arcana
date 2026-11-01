@@ -140,10 +140,10 @@ Requirement tags below (`[v0.1]`, `[v0.2]`, …) state the release in which each
 
 ### 7.6 Templates (TP)
 
-- **FR-TP-1 [v0.1]** A template maps a name to an image plus defaults (resources, TTL, env, workdir, network preset, warm pool size). v0.1 ships a minimal `base` template defined in the default config.
+- **FR-TP-1 [v0.1]** A template maps a name to an image plus defaults (resources, TTL, env, workdir, network preset, warm pool size). v0.1 ships a minimal `base` template defined in the default config and built locally from `templates/base/Dockerfile`.
 - **FR-TP-2 [v0.2]** Official templates `base`, `python`, `node`, `go`, built from Dockerfiles in `templates/` and published to `ghcr.io/brendatamaar/arcana-<name>` by CI on release tags.
 - **FR-TP-3 [v0.2]** `GET /v1/templates` lists configured templates and their defaults.
-- **FR-TP-4 [v0.2]** Users can add their own templates in config; any image works if it has `/bin/sh`, `tar`, `du` and a UID 1000 user (or Arcana can run as UID 1000 without a named user).
+- **FR-TP-4 [v0.2]** Users can add their own templates in config; images must have `/bin/sh`, `tar`, `du`, `/bin/sleep` supporting `infinity`, and support UID 1000 (a named user is optional). For volume workspaces, `/workspace` must exist in the image and be owned by UID/GID 1000 so Docker copy-up provisions a writable volume without privileged sandbox execution. Images declaring additional writable volumes outside `/workspace`, `/tmp` and `/run/sbx` are rejected.
 
 ### 7.7 Snapshots and fork (SN)
 
@@ -707,7 +707,7 @@ network:                          # allowlist mode is v0.2
 
 templates:
   - name: base
-    image: ghcr.io/brendatamaar/arcana-base:latest
+    image: arcana-base:local # v0.1: docker build -t arcana-base:local templates/base
     warm_pool: 0
   # v0.2 adds python, node, go with presets and warm_pool sizes
 
@@ -730,7 +730,7 @@ log:
   format: json                    # json | text
 ```
 
-Until official images are published (v0.2), the `base` template may point at a public image such as `debian:stable-slim`; Arcana runs it as UID 1000.
+Until official images are published (v0.2), build the included minimal base with `docker build -t arcana-base:local templates/base`. Custom templates must provide the writable workspace ownership described in FR-TP-4; sandboxes always run as UID 1000.
 
 ## 14. Distribution and installation
 

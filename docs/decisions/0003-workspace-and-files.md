@@ -22,3 +22,10 @@ Fresh volume ownership must support UID 1000. The spike seeded ownership from
 the image's `/workspace`; production provisioning must establish writable
 ownership without changing the non-root sandbox default or touching host volume
 contents. Snapshots remain workspace-only and are never extracted on the host.
+
+T1.7 implementation: the v0.1 local base Dockerfile supplies `/workspace` owned
+by UID/GID 1000. Docker's standard volume copy-up preserves that ownership.
+Custom volume-backed templates must do the same (PRD FR-TP-4). The driver
+rejects images declaring other writable volumes, retaining the read-only root
+boundary. The minimal local image becomes the default until T2.1 publishes the
+official templates.

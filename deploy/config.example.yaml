@@ -61,7 +61,7 @@ network:                          # allowlist mode is v0.2
 
 templates:
   - name: base
-    image: ghcr.io/brendatamaar/arcana-base:latest
+    image: arcana-base:local
     warm_pool: 0
   # v0.2 adds python, node, go with presets and warm_pool sizes
 

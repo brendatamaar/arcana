@@ -135,7 +135,7 @@ func Default() Config {
 		Limits:    Limits{20, 10, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{"none", "10.200.0.0/16", 28},
-		Templates: []Template{{Name: "base", Image: "ghcr.io/brendatamaar/arcana-base:latest"}},
+		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
 		Log:       Log{"info", "json"},
 	}
 }

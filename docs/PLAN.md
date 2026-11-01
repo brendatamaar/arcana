@@ -132,11 +132,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Shared driver/session/spec/resource types and typed runtime errors added. The concurrency-safe fake scripts streams, exits, failures and channel-controlled delays, bounds recorded data/instances/scripts, clones mutable inputs and cancels sessions on destroy. Runtime race tests, make check and VPS integration/escape suites passed.
 
-### [ ] T1.7 Docker driver
+### [x] T1.7 Docker driver
 - **Deps:** T1.6 · **PRD:** FR-RL-1, FR-RL-2, FR-RL-3, §9.5, FR-DR-3
 - **Do:** `internal/runtime/docker` using the official Docker Engine Go client: create + start with runtime from config, resource limits (NanoCPUs, Memory, MemorySwap = Memory, PidsLimit, ulimits), `CapDrop: ALL`, `SecurityOpt: no-new-privileges`, `ReadonlyRootfs`, `User: 1000:1000`, tmpfs `/tmp` and `/run/sbx` with size limits, workspace volume or tmpfs, `NetworkMode: none`, helper bind mount (read-only), labels and names; init process keeping the container alive (`--init` + `sleep infinity` or equivalent); exec with demuxed streams or TTY; resize; destroy (container, then volume; idempotent; ignores not-found); list by labels; stats.
 - **Acceptance:** integration tests (build tag `integration`) create, exec, destroy a sandbox under runsc when available and runc otherwise; all hardening flags asserted via container inspect.
 - **Verify:** `go test ./internal/runtime/docker/... && make test-integration`
+
+> Done: Official Moby driver enforces OCI opt-in, all hardening/resource flags, managed ownership, bounded streaming/status polling, safe partial cleanup and idempotent container/volume destruction. Unit race tests and make check passed; VPS tests inspected actual flags and verified UID/workspace, readonly root, TTY resize, tmpfs ENOSPC, peer health and cleanup under runsc and explicit runc with both backends; full integration/escape suites passed. Unit coverage 79.4%. Minimal arcana-base:local Dockerfile seeds UID 1000 workspace ownership until T2.1 publishes official images.
 
 ### [ ] T1.8 `sbx-exec` helper
 - **Deps:** T0.3, T1.7 · **PRD:** §9.4, FR-EX-4
@@ -389,6 +391,10 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-01 — Add github.com/oapi-codegen/runtime v1.8.0 (Apache-2.0), required by the generated standard HTTP server — owner approved; owner also gave standing approval for Phase 1 implementation decisions, while security requirements and escape assertions remain mandatory — T1.5
 
 - 2026-11-01 — Use the generator companion github.com/getkin/kin-openapi (MIT) to validate the API contract in tests — reuses the generator dependency and enforces spec validity under the owner's standing approval — T1.5
+
+- 2026-11-01 — Pin the official Moby client v0.6.2 and API v1.56.1 (Apache-2.0), with containerd/errdefs (Apache-2.0) for typed daemon errors — reuse the Phase 0 validated successor modules under standing owner approval — T1.7, ADR 0001
+- 2026-11-01 — Ship a locally built v0.1 base image with UID/GID 1000 workspace ownership and reject unexpected image volumes — standard Docker copy-up provisions named volumes while retaining every non-root/readonly/host-file boundary; official multi-arch templates remain T2.1 — T1.7, PRD FR-TP-4, ADR 0003
+- 2026-11-01 — Docker instance handles use deterministic managed container names — enables idempotent volume cleanup after a container has already disappeared, with install/sandbox labels checked on each resource — T1.7
 
 ## Open questions
 
