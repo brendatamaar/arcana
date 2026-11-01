@@ -42,3 +42,17 @@ func TestRoot_ShowsHelp(t *testing.T) {
 		t.Fatalf("help missing version command: %s", &output)
 	}
 }
+
+func TestRoot_ConfigFlag(t *testing.T) {
+	root := newRootCommand()
+	root.SetArgs([]string{"--config", "/custom/config.yaml", "version"})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := root.PersistentFlags().GetString("config")
+	if err != nil || got != "/custom/config.yaml" {
+		t.Fatalf("config = %q, error %v", got, err)
+	}
+}

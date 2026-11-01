@@ -84,11 +84,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Phase 1 — v0.1 Core MVP
 
-### [ ] T1.1 Configuration
+### [x] T1.1 Configuration
 - **Deps:** T0.6 · **PRD:** §13, NFR-OPS-3
 - **Do:** `internal/config` with koanf: defaults struct, YAML file, env overrides (`ARCANA_` + `__` separator), validation (ranges, CIDR parsing, defaults ≤ maximums, allowed roots absolute, runc guard). `--config` flag on root command. Ship `deploy/config.example.yaml` matching PRD §13 (v0.1 keys active, later keys commented).
 - **Acceptance:** invalid configs produce clear, field-specific errors; env overrides work for nested keys.
 - **Verify:** `go test ./internal/config/...` (table-driven: defaults, file, env, each validation rule)
+
+> Done: Added koanf defaults/YAML/environment loading, field-specific validation, safe runtime/network guards, root --config flag and the versioned example configuration. go test ./internal/config/... and make check passed.
 
 ### [ ] T1.2 Logging, IDs and API errors
 - **Deps:** T1.1 · **PRD:** §9.6, §10.3, NFR-OPS-1, NFR-SEC-4
@@ -150,7 +152,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - **Acceptance:** tests with an in-process server and fake driver for every message type, disconnect handling and backpressure; integration test streams output of a command that prints over time.
 - **Verify:** `go test ./internal/stream/... && make test-integration`
 
-### [ ] T1.12 Files API
+### [!] T1.12 Files API
+> Blocked: The specified cat redirection cannot run via argv; an internal shell invocation would conflict with AGENTS security rule 3. Awaiting owner clarification recorded in Open questions. Implementation has not started.
 - **Deps:** T1.10 · **PRD:** FR-FS-1…5
 - **Do:** Path validation (absolute, cleaned, under `allowed_roots`, reject NUL and `..` escape, including URL-encoded forms decoded by the router); operations through exec inside the sandbox: write (stdin → `cat > path` via argv, creating parent dirs), read (with size check first via `stat`), list (`find` with depth or a small helper subcommand of `sbx-exec` producing JSON — prefer the helper for consistent output), delete, archive upload (`tar -xzf - -C path`) and download (`tar -czf - -C path .`), size caps enforced while streaming.
 - **Acceptance:** path validation table tests; integration tests for each operation; symlink in workspace pointing to `/etc/passwd` returns the **sandbox's** file, never the host's.
@@ -376,3 +379,5 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 
 - 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI passed for T0.1.
 - 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.
+
+- 2026-11-01 — T1.12 specifies file writes as `stdin → cat > path` via argv, but shell redirection cannot execute through argv alone; introducing an internal shell string conflicts with AGENTS security rule 3. May T1.12 use a stdlib-only sbx-exec write subcommand (with the shared path validation) instead? Phase 1 paused for owner clarification under the document-conflict rule; T1.12 has not been started.

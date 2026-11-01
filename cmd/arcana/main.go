@@ -21,6 +21,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.PersistentFlags().String("config", "/etc/arcana/config.yaml", "Path to the YAML configuration file")
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print version, commit and build date",
