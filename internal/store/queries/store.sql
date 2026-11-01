@@ -33,7 +33,12 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *;
 SELECT * FROM sandboxes WHERE id = ?;
 
 -- name: ListSandboxes :many
-SELECT * FROM sandboxes WHERE id > ? AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner)) AND (sqlc.arg(state) = '' OR state = sqlc.arg(state)) ORDER BY id LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
+SELECT * FROM sandboxes WHERE id > ? AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner)) AND (sqlc.arg(state) = '' OR state = sqlc.arg(state))
+AND (sqlc.arg(label_key) = '' OR labels ->> sqlc.arg(label_key) = sqlc.arg(label_value))
+ORDER BY id LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
+
+-- name: RecordSandboxTransition :exec
+INSERT INTO sandbox_transitions(sandbox_id,state,at,reason) VALUES (?,?,?,?);
 
 -- name: CountActiveSandboxes :one
 SELECT count(*) FROM sandboxes WHERE state IN ('creating','running','destroying') AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner));
@@ -42,7 +47,7 @@ SELECT count(*) FROM sandboxes WHERE state IN ('creating','running','destroying'
 UPDATE sandboxes SET state = ?, container_id = ?, ended_at = ?, end_reason = ? WHERE id = ? AND state = sqlc.arg(previous_state);
 
 -- name: TouchSandbox :execrows
-UPDATE sandboxes SET last_activity_at = ? WHERE id = ? AND state = 'running';
+UPDATE sandboxes SET last_activity_at = MAX(last_activity_at,sqlc.arg(last_activity_at)) WHERE id = sqlc.arg(id) AND state = 'running';
 
 -- name: CreateExec :one
 INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at) VALUES (?,?,?,?,?,?,?) RETURNING *;

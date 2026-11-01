@@ -66,3 +66,11 @@ type Sandbox struct {
 	EndedAt            sql.NullTime
 	EndReason          sql.NullString
 }
+
+type SandboxTransition struct {
+	Sequence  int64
+	SandboxID string
+	State     string
+	At        time.Time
+	Reason    sql.NullString
+}

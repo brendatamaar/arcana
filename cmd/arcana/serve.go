@@ -16,6 +16,8 @@ import (
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/logging"
+	"github.com/brendatamaar/arcana/internal/orchestrator"
+	"github.com/brendatamaar/arcana/internal/runtime/docker"
 	"github.com/brendatamaar/arcana/internal/store"
 )
 
@@ -40,9 +42,19 @@ func newServeCommand() *cobra.Command {
 			return err
 		}
 		defer func() { _ = database.Close() }()
-		if _, err = helper.Install(ctx, cfg.DataDir); err != nil {
+		helperPath, err := helper.Install(ctx, cfg.DataDir)
+		if err != nil {
 			return err
 		}
+		driver, err := docker.New(docker.Config{Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
+		if err != nil {
+			return err
+		}
+		defer func() { _ = driver.Close() }()
+		if cfg.Runtime.Docker.OCIRuntime == "runc" {
+			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
+		}
+		lifecycle := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
 		keys := auth.New(database, auth.SystemClock{})
 		if err = keys.Bootstrap(ctx, cfg.DataDir, cmd.OutOrStdout()); err != nil {
 			return err
@@ -61,6 +73,6 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "API listener is not loopback; use a TLS-terminating reverse proxy")
 		}
 		logger.InfoContext(ctx, "API listening", "address", listener.Addr().String())
-		return api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
+		return api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
 	}}
 }

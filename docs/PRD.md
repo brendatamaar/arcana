@@ -535,6 +535,11 @@ sandboxes(
   idle_timeout_seconds INTEGER NOT NULL, last_activity_at TIMESTAMP NOT NULL,
   ended_at TIMESTAMP, end_reason TEXT)
 
+sandbox_transitions(
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  sandbox_id TEXT NOT NULL REFERENCES sandboxes(id),
+  state TEXT NOT NULL, at TIMESTAMP NOT NULL, reason TEXT)
+
 execs(
   id TEXT PRIMARY KEY, sandbox_id TEXT NOT NULL REFERENCES sandboxes(id),
   command TEXT NOT NULL,                                 -- JSON argv or shell string

@@ -42,7 +42,7 @@ func apiFixture(t *testing.T) (http.Handler, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(keys, slog.New(slog.NewJSONHandler(io.Discard, nil)), config.Default().Limits.Files), admin, user
+	return New(keys, slog.New(slog.NewJSONHandler(io.Discard, nil)), config.Default().Limits.Files, nil), admin, user
 }
 
 func request(handler http.Handler, method, path, key, body string) *httptest.ResponseRecorder {

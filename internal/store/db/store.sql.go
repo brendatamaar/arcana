@@ -425,14 +425,18 @@ func (q *Queries) ListKeys(ctx context.Context, arg ListKeysParams) ([]ApiKey, e
 }
 
 const listSandboxes = `-- name: ListSandboxes :many
-SELECT id, owner_key_id, template, runtime, state, container_id, source, cpus, memory_mb, disk_mb, pids, network_mode, network_allow, env_keys, labels, from_snapshot_id, created_at, expires_at, idle_timeout_seconds, last_activity_at, ended_at, end_reason FROM sandboxes WHERE id > ? AND (?2 = '' OR owner_key_id = ?2) AND (?3 = '' OR state = ?3) ORDER BY id LIMIT MIN(MAX(CAST(?4 AS INTEGER), 1), 1000)
+SELECT id, owner_key_id, template, runtime, state, container_id, source, cpus, memory_mb, disk_mb, pids, network_mode, network_allow, env_keys, labels, from_snapshot_id, created_at, expires_at, idle_timeout_seconds, last_activity_at, ended_at, end_reason FROM sandboxes WHERE id > ? AND (?2 = '' OR owner_key_id = ?2) AND (?3 = '' OR state = ?3)
+AND (?4 = '' OR labels ->> ?4 = ?5)
+ORDER BY id LIMIT MIN(MAX(CAST(?6 AS INTEGER), 1), 1000)
 `
 
 type ListSandboxesParams struct {
-	ID        string
-	Owner     interface{}
-	State     interface{}
-	PageLimit int64
+	ID         string
+	Owner      interface{}
+	State      interface{}
+	LabelKey   interface{}
+	LabelValue sql.NullString
+	PageLimit  int64
 }
 
 func (q *Queries) ListSandboxes(ctx context.Context, arg ListSandboxesParams) ([]Sandbox, error) {
@@ -440,6 +444,8 @@ func (q *Queries) ListSandboxes(ctx context.Context, arg ListSandboxesParams) ([
 		arg.ID,
 		arg.Owner,
 		arg.State,
+		arg.LabelKey,
+		arg.LabelValue,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -484,6 +490,27 @@ func (q *Queries) ListSandboxes(ctx context.Context, arg ListSandboxesParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordSandboxTransition = `-- name: RecordSandboxTransition :exec
+INSERT INTO sandbox_transitions(sandbox_id,state,at,reason) VALUES (?,?,?,?)
+`
+
+type RecordSandboxTransitionParams struct {
+	SandboxID string
+	State     string
+	At        time.Time
+	Reason    sql.NullString
+}
+
+func (q *Queries) RecordSandboxTransition(ctx context.Context, arg RecordSandboxTransitionParams) error {
+	_, err := q.db.ExecContext(ctx, recordSandboxTransition,
+		arg.SandboxID,
+		arg.State,
+		arg.At,
+		arg.Reason,
+	)
+	return err
 }
 
 const revokeKey = `-- name: RevokeKey :execrows
@@ -532,11 +559,11 @@ func (q *Queries) TouchKey(ctx context.Context, arg TouchKeyParams) error {
 }
 
 const touchSandbox = `-- name: TouchSandbox :execrows
-UPDATE sandboxes SET last_activity_at = ? WHERE id = ? AND state = 'running'
+UPDATE sandboxes SET last_activity_at = MAX(last_activity_at,?1) WHERE id = ?2 AND state = 'running'
 `
 
 type TouchSandboxParams struct {
-	LastActivityAt time.Time
+	LastActivityAt interface{}
 	ID             string
 }
 

@@ -148,11 +148,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Production subreaper/pidfd controller reaps detached descendants before atomic completion, separates transport from actual exit codes, bounds state and cancellation, and embeds reproducible static amd64/arm64 helpers with checksum-verified atomic installation. Parser/status/core tests, mutation proof, 101125 fuzz executions, make check, Linux lint, full integration/escape suites and static build passed. Real serve verified helper checksum/mode, private admin key, health and SIGTERM. Linux helper coverage 70.6%; protocol 100%. tmpfs workspace execution verified under runsc/runc.
 
-### [ ] T1.9 Orchestrator: lifecycle
+### [x] T1.9 Orchestrator: lifecycle
 - **Deps:** T1.3, T1.6 · **PRD:** FR-LC-1…4, FR-LC-6, FR-LC-9, FR-TP-1
 - **Do:** `internal/orchestrator`: resolve template and merge overrides (clamped to maximums), quota checks, create via driver, persist state transitions, get/list with ownership filtering, idempotent destroy, keepalive, activity tracking. Wire handlers for sandbox endpoints.
 - **Acceptance:** unit tests with fake driver cover state machine, quotas, clamping, ownership (non-admin gets 404 for others' sandboxes), driver failure → `failed` with reason.
 - **Verify:** `go test ./internal/orchestrator/... ./internal/api/...`
+
+> Done: Added pure lifecycle decisions, atomic quota reservations and transition history, template/env/resource/TTL resolution, ownership-filtered state/label pagination, idempotent destroy and TTL-preserving activity. Sandbox HTTP handlers and production Docker wiring are active. Fake-driver/API race tests, terminal-state mutation proof, 2866 fuzz executions, Windows and Linux make check, full integration/escape suites, real runsc lifecycle and static build/serve checks passed.
 
 ### [ ] T1.10 Sync exec
 - **Deps:** T1.8, T1.9 · **PRD:** FR-EX-1…3, FR-EX-5, FR-EX-6, FR-EX-8, FR-EX-9
@@ -403,6 +405,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-01 — Commit reproducible static linux/amd64 and linux/arm64 helper assets plus checksum manifest — enables go install without an external compiler at serve time; generation/freshness checks rebuild them with the pinned Go toolchain, CGO disabled and build paths/IDs removed — T1.8
 
 - 2026-11-01 — Explicit exec mount option for tmpfs /workspace — Docker defaults tmpfs to noexec, preventing sandbox build artifacts from running; nosuid/nodev, resource limits and all container hardening remain enforced — T1.8, PRD FR-RL-3
+
+- 2026-11-01 — Add an append-only sandbox transition table, committed atomically with state changes — preserves timestamps/reasons for intermediate lifecycle stages required by FR-LC-3; quota reservation occurs in the creating-row transaction — T1.9, PRD §11
 
 ## Open questions
 

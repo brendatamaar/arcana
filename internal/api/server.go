@@ -12,17 +12,19 @@ import (
 	"github.com/brendatamaar/arcana/internal/apierr"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/orchestrator"
 )
 
 // Server implements the generated v0.1 API contract.
 type Server struct {
-	keys   *auth.Service
-	logger *slog.Logger
+	keys      *auth.Service
+	logger    *slog.Logger
+	lifecycle *orchestrator.Service
 }
 
 // New builds the middleware stack and generated standard-library router.
-func New(keys *auth.Service, logger *slog.Logger, files config.Files) http.Handler {
-	server := &Server{keys: keys, logger: logger}
+func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle *orchestrator.Service) http.Handler {
+	server := &Server{keys: keys, logger: logger, lifecycle: lifecycle}
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})
