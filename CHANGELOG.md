@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the production exec helper with detached-process cleanup, bounded atomic status and checksum-verified embedded static binaries.
+
 - Add the hardened Docker/runsc driver, bounded exec streaming, volume/tmpfs workspaces and a minimal locally built base image.
 
 - Add the runtime driver contract and a bounded, scripted fake for deterministic orchestration tests.

@@ -226,7 +226,7 @@ func (d *Driver) createOptions(spec runtime.Spec) client.ContainerCreateOptions 
 		Mounts:    []mount.Mount{{Type: mount.TypeBind, Source: d.config.HelperPath, Target: "/opt/arcana/sbx-exec", ReadOnly: true}},
 	}
 	if spec.WorkspaceBackend == "tmpfs" {
-		host.Tmpfs["/workspace"] = fmt.Sprintf("rw,nosuid,nodev,size=%d,uid=1000,gid=1000,mode=0755", spec.Resources.DiskMB*megabyte)
+		host.Tmpfs["/workspace"] = fmt.Sprintf("rw,exec,nosuid,nodev,size=%d,uid=1000,gid=1000,mode=0755", spec.Resources.DiskMB*megabyte)
 	} else {
 		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeVolume, Source: sandboxName(spec.SandboxID) + "-ws", Target: "/workspace"})
 	}

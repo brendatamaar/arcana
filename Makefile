@@ -3,10 +3,13 @@ COMMIT ?= $(shell git rev-parse --short HEAD)
 BUILD_DATE ?= $(shell git log -1 --format=%cI)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
-.PHONY: build test test-integration test-escape lint generate verify-generated check clean
+.PHONY: helper build test test-integration test-escape lint generate verify-generated check clean
 build: export CGO_ENABLED = 0
-build:
+build: helper
 	go build -ldflags "$(LDFLAGS)" -o bin/arcana ./cmd/arcana
+
+helper:
+	go run ./scripts/buildhelper --bin
 
 test:
 	go test -race ./...
@@ -25,7 +28,7 @@ generate:
 	go generate ./...
 
 verify-generated: generate
-	git diff --exit-code -- internal/api/gen internal/store/db
+	git diff --exit-code -- internal/api/gen internal/store/db internal/helper/assets
 
 check: verify-generated lint test
 

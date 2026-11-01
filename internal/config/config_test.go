@@ -115,3 +115,10 @@ func TestValidate(t *testing.T) {
 		}
 	})
 }
+
+func TestLoad_RejectsTimeoutBeyondHelperCeiling(t *testing.T) {
+	t.Setenv("ARCANA_LIMITS__EXEC__MAX_TIMEOUT_SECONDS", "3601")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "limits.exec.max_timeout_seconds") {
+		t.Fatalf("unsupported helper timeout accepted: %v", err)
+	}
+}

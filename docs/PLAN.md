@@ -140,11 +140,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Official Moby driver enforces OCI opt-in, all hardening/resource flags, managed ownership, bounded streaming/status polling, safe partial cleanup and idempotent container/volume destruction. Unit race tests and make check passed; VPS tests inspected actual flags and verified UID/workspace, readonly root, TTY resize, tmpfs ENOSPC, peer health and cleanup under runsc and explicit runc with both backends; full integration/escape suites passed. Unit coverage 79.4%. Minimal arcana-base:local Dockerfile seeds UID 1000 workspace ownership until T2.1 publishes official images.
 
-### [ ] T1.8 `sbx-exec` helper
+### [x] T1.8 `sbx-exec` helper
 - **Deps:** T0.3, T1.7 · **PRD:** §9.4, FR-EX-4
-- **Do:** Production version of `cmd/sbx-exec` from the spike: `run`, `kill`, `status`; status JSON in `/run/sbx`; exit code passthrough; TTY mode handling; no dependencies beyond stdlib. Build it in `make build` before Arcana, embed the binary with `embed.FS` (`internal/helper`), and write it to `data_dir/bin/sbx-exec` (mode 0755, checksum-verified) at `serve` start.
+- **Do:** Production version of `cmd/sbx-exec` from the spike: `run`, `kill`, `status`; status JSON in `/run/sbx`; real command exit codes in status, with transport exits 0/124 for completed success/failure and 125 for helper faults; TTY mode handling; no dependencies beyond stdlib. Build it in `make build` before Arcana, embed the binary with `embed.FS` (`internal/helper`), and write it to `data_dir/bin/sbx-exec` (mode 0755, checksum-verified) at `serve` start.
 - **Acceptance:** unit tests for argument parsing and status; integration test: child processes that ignore SIGTERM are killed on timeout and on `kill`, under runsc.
 - **Verify:** `go test ./cmd/sbx-exec/... && make test-integration`
+
+> Done: Production subreaper/pidfd controller reaps detached descendants before atomic completion, separates transport from actual exit codes, bounds state and cancellation, and embeds reproducible static amd64/arm64 helpers with checksum-verified atomic installation. Parser/status/core tests, mutation proof, 101125 fuzz executions, make check, Linux lint, full integration/escape suites and static build passed. Real serve verified helper checksum/mode, private admin key, health and SIGTERM. Linux helper coverage 70.6%; protocol 100%. tmpfs workspace execution verified under runsc/runc.
 
 ### [ ] T1.9 Orchestrator: lifecycle
 - **Deps:** T1.3, T1.6 · **PRD:** FR-LC-1…4, FR-LC-6, FR-LC-9, FR-TP-1
@@ -395,6 +397,12 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-01 — Pin the official Moby client v0.6.2 and API v1.56.1 (Apache-2.0), with containerd/errdefs (Apache-2.0) for typed daemon errors — reuse the Phase 0 validated successor modules under standing owner approval — T1.7, ADR 0001
 - 2026-11-01 — Ship a locally built v0.1 base image with UID/GID 1000 workspace ownership and reject unexpected image volumes — standard Docker copy-up provisions named volumes while retaining every non-root/readonly/host-file boundary; official multi-arch templates remain T2.1 — T1.7, PRD FR-TP-4, ADR 0003
 - 2026-11-01 — Docker instance handles use deterministic managed container names — enables idempotent volume cleanup after a container has already disappeared, with install/sandbox labels checked on each resource — T1.7
+
+- 2026-11-01 — Use child subreapers, non-dumpable controllers, pidfd identity signalling and atomic bounded metadata for helper cleanup — ordinary process groups do not cover setsid/double-fork descendants; verified kernel facilities under hardened runsc/runc — T1.8, PRD §9.4, ADR 0002
+- 2026-11-01 — Separate helper transport exits (0 completed success / 124 completed nonzero / 125 helper error) from user command exit metadata — prevents helper signals/runtime faults being accepted as ordinary command failure after status tampering; public API and arcana exec retain the real exit code; owner standing approval applied — T1.8, PRD §9.4
+- 2026-11-01 — Commit reproducible static linux/amd64 and linux/arm64 helper assets plus checksum manifest — enables go install without an external compiler at serve time; generation/freshness checks rebuild them with the pinned Go toolchain, CGO disabled and build paths/IDs removed — T1.8
+
+- 2026-11-01 — Explicit exec mount option for tmpfs /workspace — Docker defaults tmpfs to noexec, preventing sandbox build artifacts from running; nosuid/nodev, resource limits and all container hardening remain enforced — T1.8, PRD FR-RL-3
 
 ## Open questions
 

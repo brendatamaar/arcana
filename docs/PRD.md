@@ -124,7 +124,7 @@ Requirement tags below (`[v0.1]`, `[v0.2]`, …) state the release in which each
 - **FR-RL-2 [v0.1]** Hardening flags on every sandbox container: drop all capabilities, `no-new-privileges`, read-only root filesystem, non-root user (UID 1000), tmpfs `/tmp` and `/run/sbx`, no Docker socket or host paths mounted (except the read-only helper binary, §9.4).
 - **FR-RL-3 [v0.1]** Workspace backends (`workspace.backend`):
   - `volume` (default): a Docker named volume per sandbox mounted at `/workspace`. Disk use is checked by a watchdog every `workspace.check_interval_seconds`; exceeding `disk_mb` destroys the sandbox with reason `disk_quota`. This is a soft limit and is documented as such.
-  - `tmpfs`: a size-capped tmpfs at `/workspace`. This is a hard limit, but it is memory-backed, so its size counts against host RAM.
+  - `tmpfs`: a size-capped, executable tmpfs at `/workspace` with `nosuid,nodev` (sandbox builds must run from their workspace). This is a hard limit, but it is memory-backed, so its size counts against host RAM.
 - **FR-RL-4 [v0.1]** Templates configure package managers to install into `/workspace` (for example a Python virtualenv at `/workspace/.venv`, `GOPATH=/workspace/.go`), because the root filesystem is read-only.
 
 ### 7.5 Network (NW)
@@ -359,11 +359,13 @@ Files, snapshots and cancellation are implemented in the orchestrator on top of 
 
 Docker's exec API cannot signal or kill an exec'd process. To satisfy FR-EX-4, Arcana embeds a tiny static helper, writes it to `data_dir/bin/sbx-exec`, and bind-mounts it read-only at `/opt/arcana/sbx-exec` in every sandbox.
 
-- `sbx-exec run --id <exec_id> --timeout <s> [--cwd ..] [--tty] -- <argv...>` starts the command in a new process group (for TTY: new process group set as the terminal's foreground group), writes `/run/sbx/<exec_id>.pid`, kills the whole group with SIGKILL on timeout, and writes `/run/sbx/<exec_id>.json` with `{exit_code, timed_out, signal}`.
-- `sbx-exec kill --id <exec_id> [--grace 2s]` sends SIGTERM to the group, then SIGKILL after the grace period.
-- `sbx-exec status --id <exec_id>` prints the JSON status.
+- `sbx-exec run --id <exec_id> --timeout <s> [--cwd ..] [--tty] -- <argv...>` starts the command in a new process group (for TTY: the terminal's foreground group), registers as a child subreaper and becomes non-dumpable before starting untrusted code. It adopts detached descendants and signals verified process identities through pidfds, then reaps every child before atomically writing bounded `/run/sbx/<exec_id>.json` metadata with `{id, exit_code, timed_out, signal, cancelled, cleanup_complete}`. Remaining descendants are also killed on normal command exit. Controller identity is written atomically to `/run/sbx/<exec_id>.pid`.
+- `sbx-exec kill --id <exec_id> [--grace 2s]` posts a bounded request to the matching controller identity; the controller sends SIGTERM to its complete descendant tree, then SIGKILL after the grace period and waits for cleanup. A mutable PID file never directly authorizes signalling an arbitrary process.
+- `sbx-exec status --id <exec_id>` prints the JSON status; internal callers may use `--consume` to remove it after retrieval.
 - `sbx-exec write --path <file>` copies bounded stdin to a file and creates parent directories inside the sandbox; the orchestrator validates the path against allowed roots before invocation. No shell redirection is used.
 - `sbx-exec ls --path <dir> [--depth N]` prints a JSON directory listing, so the files API gets consistent output regardless of the image's `find`/`ls` variants.
+
+Helper transport exits are `0` for a completed successful command, `124` for a completed nonzero command, and `125` for helper failure. The real command exit code is in the status metadata and is returned unchanged by the REST API, streaming protocol and `arcana exec`. The host accepts completion only when the ID, cleanup marker and transport exit agree. Other transport exits, missing/invalid status, or uncertain cleanup require sandbox destruction; the independent host hard deadline remains mandatory. The runtime must implement child subreapers and pidfd signalling (Linux >= 5.3 for runc, or a supporting runsc); unsupported runtimes fail closed and doctor reports the required upgrade.
 
 The helper is the seed of the stretch-goal `envd` daemon used by the Firecracker driver.
 
@@ -636,6 +638,7 @@ Located in `test/escape`, run with `make test-escape` and in CI. Each test asser
 - With `runc`, isolation relies on the shared host kernel and is not a strong boundary.
 - The `volume` workspace quota is enforced by polling, so short bursts can exceed it between checks.
 - Snapshots capture `/workspace` only.
+- Commands within one sandbox share a UID, filesystem and process visibility. Background work must remain attached to an exec; detached descendants are reaped when that exec ends.
 - Resource contention between sandboxes on one host (noisy neighbours) is reduced, not eliminated.
 - Side-channel attacks are out of scope.
 
@@ -678,7 +681,7 @@ limits:
     pids: 4096
   exec:
     default_timeout_seconds: 120
-    max_timeout_seconds: 3600
+    max_timeout_seconds: 3600      # v0.1 helper hard ceiling; may be lowered
     max_output_bytes: 10485760
     max_concurrent_per_sandbox: 8
     tail_buffer_bytes: 262144      # v0.3, dashboard output tail per exec

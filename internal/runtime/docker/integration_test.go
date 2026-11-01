@@ -189,6 +189,14 @@ func TestDocker_RealHardeningWorkspaceExecAndCleanup(t *testing.T) {
 				if result.ExitCode != 0 {
 					t.Fatalf("workspace is not writable by UID 1000: %s", stderr)
 				}
+				_, _, result = realExec(t, ctx, driver, instance.ID, runtime.ExecRequest{Cmd: []string{"/bin/cp", "/opt/arcana/sbx-exec", "/workspace/copied-helper"}}, "")
+				if result.ExitCode != 0 {
+					t.Fatal("helper copy into workspace failed")
+				}
+				stdout, _, result = realExec(t, ctx, driver, instance.ID, runtime.ExecRequest{Cmd: []string{"/workspace/copied-helper", "run", "--id", "exe_workspace", "--", "/usr/bin/id", "-u"}}, "")
+				if result.ExitCode != 0 || strings.TrimSpace(stdout) != "1000" {
+					t.Fatal("workspace does not support executable artifacts")
+				}
 				_, _, result = realExec(t, ctx, driver, instance.ID, runtime.ExecRequest{Cmd: []string{"/usr/bin/touch", "/etc/arcana-denied"}}, "")
 				if result.ExitCode == 0 {
 					t.Fatal("write outside writable roots succeeded")

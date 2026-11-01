@@ -17,6 +17,8 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/brendatamaar/arcana/internal/helper/protocol"
 )
 
 // DefaultPath is the operator configuration path.
@@ -216,6 +218,9 @@ func (c Config) Validate() error {
 	compareResources(c.Limits.Defaults.Resources, c.Limits.Maximums, "limits.defaults", bad)
 	if c.Limits.Defaults.TTLSeconds > c.Limits.MaxTTLSeconds {
 		bad("limits.defaults.ttl_seconds", "exceeds limits.max_ttl_seconds")
+	}
+	if c.Limits.Exec.MaxTimeoutSeconds > protocol.MaxTimeoutSeconds {
+		bad("limits.exec.max_timeout_seconds", "must not exceed the helper hard ceiling of 3600")
 	}
 	if c.Limits.Exec.DefaultTimeoutSeconds > c.Limits.Exec.MaxTimeoutSeconds {
 		bad("limits.exec.default_timeout_seconds", "exceeds limits.exec.max_timeout_seconds")

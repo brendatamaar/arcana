@@ -14,6 +14,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/api"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/logging"
 	"github.com/brendatamaar/arcana/internal/store"
 )
@@ -39,6 +40,9 @@ func newServeCommand() *cobra.Command {
 			return err
 		}
 		defer func() { _ = database.Close() }()
+		if _, err = helper.Install(ctx, cfg.DataDir); err != nil {
+			return err
+		}
 		keys := auth.New(database, auth.SystemClock{})
 		if err = keys.Bootstrap(ctx, cfg.DataDir, cmd.OutOrStdout()); err != nil {
 			return err
