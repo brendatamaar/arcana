@@ -92,11 +92,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added koanf defaults/YAML/environment loading, field-specific validation, safe runtime/network guards, root --config flag and the versioned example configuration. go test ./internal/config/... and make check passed.
 
-### [ ] T1.2 Logging, IDs and API errors
+### [x] T1.2 Logging, IDs and API errors
 - **Deps:** T1.1 · **PRD:** §9.6, §10.3, NFR-OPS-1, NFR-SEC-4
 - **Do:** `slog` setup (json/text, level); request ID middleware; `internal/ids` (prefixed `crypto/rand` base32 IDs); `internal/apierr` with typed error codes mapped to HTTP status and the JSON error envelope; a redaction helper so API keys and env values never reach logs.
 - **Acceptance:** every error code in PRD §10.3 has a constructor and status mapping; IDs match the regex `^(sbx|exe|snp|key|aud|ses|req)_[a-z2-7]{20}$`.
 - **Verify:** `go test ./internal/ids/... ./internal/apierr/...`
+
+> Done: Added cryptographic IDs, typed API errors/statuses/envelopes, request ID middleware and JSON/text slog configuration with redaction. Task verification and make check passed; new package coverage is 96–100%.
 
 ### [ ] T1.3 Store
 - **Deps:** T1.1 · **PRD:** §11, NFR-REL-3
@@ -152,10 +154,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - **Acceptance:** tests with an in-process server and fake driver for every message type, disconnect handling and backpressure; integration test streams output of a command that prints over time.
 - **Verify:** `go test ./internal/stream/... && make test-integration`
 
-### [!] T1.12 Files API
-> Blocked: The specified cat redirection cannot run via argv; an internal shell invocation would conflict with AGENTS security rule 3. Awaiting owner clarification recorded in Open questions. Implementation has not started.
+### [ ] T1.12 Files API
 - **Deps:** T1.10 · **PRD:** FR-FS-1…5
-- **Do:** Path validation (absolute, cleaned, under `allowed_roots`, reject NUL and `..` escape, including URL-encoded forms decoded by the router); operations through exec inside the sandbox: write (stdin → `cat > path` via argv, creating parent dirs), read (with size check first via `stat`), list (`find` with depth or a small helper subcommand of `sbx-exec` producing JSON — prefer the helper for consistent output), delete, archive upload (`tar -xzf - -C path`) and download (`tar -czf - -C path .`), size caps enforced while streaming.
+- **Do:** Path validation (absolute, cleaned, under `allowed_roots`, reject NUL and `..` escape, including URL-encoded forms decoded by the router); operations through exec inside the sandbox: write (stdin → a stdlib-only `sbx-exec write` subcommand via argv, creating parent dirs; shared path validation before use), read (with size check first via `stat`), list (`find` with depth or a small helper subcommand of `sbx-exec` producing JSON — prefer the helper for consistent output), delete, archive upload (`tar -xzf - -C path`) and download (`tar -czf - -C path .`), size caps enforced while streaming.
 - **Acceptance:** path validation table tests; integration tests for each operation; symlink in workspace pointing to `/etc/passwd` returns the **sandbox's** file, never the host's.
 - **Verify:** `go test ./internal/orchestrator/... && make test-integration`
 
@@ -373,6 +374,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-01 — Accept ADRs 0001–0004 and remove the temporary spikes/ module — risk probes support Docker/runsc, helper bind mounts, exec-only transfer and internal-network egress; prototype helper and reusable integration fixtures remain for later hardening — docs/decisions/
 
+- 2026-11-01 — Owner approved an argv-only sbx-exec write subcommand for file uploads — shell redirection is unavailable through argv and internal shell construction remains prohibited — T1.12, PRD §9.4
+
 ## Open questions
 
 Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
@@ -380,4 +383,4 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI passed for T0.1.
 - 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.
 
-- 2026-11-01 — T1.12 specifies file writes as `stdin → cat > path` via argv, but shell redirection cannot execute through argv alone; introducing an internal shell string conflicts with AGENTS security rule 3. May T1.12 use a stdlib-only sbx-exec write subcommand (with the shared path validation) instead? Phase 1 paused for owner clarification under the document-conflict rule; T1.12 has not been started.
+- 2026-11-01 — Resolved by owner approval: use a stdlib-only sbx-exec write subcommand with shared path validation, preserving the internal-shell ban. Original question: T1.12 specifies file writes as `stdin → cat > path` via argv, but shell redirection cannot execute through argv alone; introducing an internal shell string conflicts with AGENTS security rule 3. May T1.12 use a stdlib-only sbx-exec write subcommand (with the shared path validation) instead? Owner approved 2026-11-01; Phase 1 resumed.

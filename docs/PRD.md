@@ -362,6 +362,7 @@ Docker's exec API cannot signal or kill an exec'd process. To satisfy FR-EX-4, A
 - `sbx-exec run --id <exec_id> --timeout <s> [--cwd ..] [--tty] -- <argv...>` starts the command in a new process group (for TTY: new process group set as the terminal's foreground group), writes `/run/sbx/<exec_id>.pid`, kills the whole group with SIGKILL on timeout, and writes `/run/sbx/<exec_id>.json` with `{exit_code, timed_out, signal}`.
 - `sbx-exec kill --id <exec_id> [--grace 2s]` sends SIGTERM to the group, then SIGKILL after the grace period.
 - `sbx-exec status --id <exec_id>` prints the JSON status.
+- `sbx-exec write --path <file>` copies bounded stdin to a file and creates parent directories inside the sandbox; the orchestrator validates the path against allowed roots before invocation. No shell redirection is used.
 - `sbx-exec ls --path <dir> [--depth N]` prints a JSON directory listing, so the files API gets consistent output regardless of the image's `find`/`ls` variants.
 
 The helper is the seed of the stretch-goal `envd` daemon used by the Firecracker driver.
