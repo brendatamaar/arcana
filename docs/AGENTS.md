@@ -23,7 +23,7 @@ If these documents conflict, **stop**, record the conflict in `PLAN.md` → Open
 2. Read the PRD sections the task references. Skim related ADRs.
 3. Plan the change briefly (files, types, tests) before writing code.
 4. Write tests alongside or before the implementation.
-5. Run `make check`. If the task touches Docker, the runtime, exec, files, networking or reconciliation, also run `make test-integration`, and `make test-escape` when security behaviour could be affected. If it touches `web/`, `internal/webui` or `api/openapi.yaml`, also run `make web-check`.
+5. Run `make check`. If the task touches Docker, the runtime, exec, files, networking or reconciliation, also run `make test-integration`, and `make test-escape` when security behaviour could be affected. From T3.7 onward, if it touches `web/`, `internal/webui` or `api/openapi.yaml`, also run `make web-check`. Before T3.7, Go, generation and security checks remain mandatory.
 6. Mark the task `[x]` in `PLAN.md` with a `> Done:` note. Update `PRD.md` and the Decision log if the design changed.
 7. Commit once per task.
 
@@ -168,6 +168,7 @@ Approved (prefer stdlib first):
 | Migrations | `github.com/pressly/goose/v3` |
 | SQL codegen | `sqlc` (tool) |
 | OpenAPI codegen | `github.com/oapi-codegen/oapi-codegen` (tool, std `net/http` server) |
+| Generated OpenAPI runtime | `github.com/oapi-codegen/runtime` (Apache-2.0; owner approved) |
 | WebSocket | `github.com/coder/websocket` |
 | Metrics | `github.com/prometheus/client_golang` |
 | MCP | official MCP Go SDK (`github.com/modelcontextprotocol/go-sdk`) |

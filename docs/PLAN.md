@@ -116,11 +116,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added unbiased base62 keys, SHA-256 storage and constant-time verification, immediate revocation with debounced usage timestamps, serialized one-time admin bootstrap, bearer/admin middleware and local keys CLI. Auth/CLI tests, bootstrap mutation/fuzz checks, make check and CGO_ENABLED=0 make build passed. Native absolute host data paths are accepted; sandbox roots retain POSIX validation. Bootstrap is wired into serve by T1.5.
 
-### [ ] T1.5 OpenAPI spec and HTTP server skeleton
+### [x] T1.5 OpenAPI spec and HTTP server skeleton
 - **Deps:** T1.2, T1.4 · **PRD:** §10
 - **Do:** `api/openapi.yaml` (OpenAPI 3.0) covering all v0.1 endpoints, schemas and error envelope; `oapi-codegen` configured for std `net/http` server and models into `internal/api/gen`; `make generate` wires it; `internal/api` server with routing, auth middleware, request ID, panic recovery, JSON helpers, `/v1/health`; `arcana serve` starts the server with graceful shutdown (NFR-REL-2). Warn when listen address is not loopback (NFR-SEC-3).
 - **Acceptance:** spec validates; generated code compiles; unimplemented handlers return 501 with the standard envelope; `serve` shuts down cleanly on SIGTERM.
 - **Verify:** `make generate verify-generated && go test ./internal/api/...`
+
+> Done: Validated v0.1 OpenAPI contract, pinned standard HTTP generation, auth/request IDs/body caps/recovery/JSON helpers, key endpoints and protected 501 stubs added. serve bootstraps admin and drains on cancellation/SIGTERM. make generate verify-generated, API tests and make check passed; Linux CGO_ENABLED=0 build, actual SIGTERM/private-key checks, auth/API race tests and retained integration/escape suites passed on the authorized VPS. API coverage 84.2%; web-check deferred by owner until T3.7.
 
 ### [ ] T1.6 Runtime driver interface and fake driver
 - **Deps:** T1.1 · **PRD:** §9.3
@@ -380,6 +382,12 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-01 — Owner approved an argv-only sbx-exec write subcommand for file uploads — shell redirection is unavailable through argv and internal shell construction remains prohibited — T1.12, PRD §9.4
 
+- 2026-11-01 — Owner approved requiring web-check from T3.7, when the dashboard and target exist — Phase 1 still runs every Go, generation and applicable security check — AGENTS workflow step 5, T1.5
+
+- 2026-11-01 — Add github.com/oapi-codegen/runtime v1.8.0 (Apache-2.0), required by the generated standard HTTP server — owner approved; owner also gave standing approval for Phase 1 implementation decisions, while security requirements and escape assertions remain mandatory — T1.5
+
+- 2026-11-01 — Use the generator companion github.com/getkin/kin-openapi (MIT) to validate the API contract in tests — reuses the generator dependency and enforces spec validity under the owner's standing approval — T1.5
+
 ## Open questions
 
 Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
@@ -388,3 +396,7 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.
 
 - 2026-11-01 — Resolved by owner approval: use a stdlib-only sbx-exec write subcommand with shared path validation, preserving the internal-shell ban. Original question: T1.12 specifies file writes as `stdin → cat > path` via argv, but shell redirection cannot execute through argv alone; introducing an internal shell string conflicts with AGENTS security rule 3. May T1.12 use a stdlib-only sbx-exec write subcommand (with the shared path validation) instead? Owner approved 2026-11-01; Phase 1 resumed.
+
+- 2026-11-01 — Resolved by owner approval: defer web-check until T3.7; retain all Go, generation and security checks. Original question: May the AGENTS workflow require make web-check for OpenAPI changes only from T3.7, when the dashboard/target exist? T1.5 cannot satisfy the current unconditional check: make web-check fails because no target exists. All Go, generation and security checks would remain required. Owner approved 2026-11-01; T1.5 resumed.
+
+- 2026-11-01 — Resolved by owner approval: add the Apache-2.0 companion runtime and continue. Original question: Approve github.com/oapi-codegen/runtime v1.8.0, the companion dependency imported by the approved oapi-codegen std-http-server generator? It is absent from the approved list; cannot compile or verify T1.5 without it. Owner approved 2026-11-01; T1.5 resumed.

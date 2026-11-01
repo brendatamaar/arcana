@@ -11,7 +11,7 @@ func RequestIDs(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := ids.New("req")
 		if err != nil {
-			http.Error(w, "request identifier unavailable", http.StatusInternalServerError)
+			_ = Write(w, r, NewInternal("request identifier unavailable"))
 			return
 		}
 		w.Header().Set("X-Request-ID", id)
