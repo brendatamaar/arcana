@@ -3,17 +3,48 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
 	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/runtime/fake"
 )
+
+type deadlineResponse struct {
+	*httptest.ResponseRecorder
+	calls int
+}
+
+func (w *deadlineResponse) SetReadDeadline(time.Time) error { w.calls++; return nil }
+
+func TestFileBody_ClosePreservesCompletedRequestAndInterruptsPendingRead(t *testing.T) {
+	for _, consume := range []bool{false, true} {
+		writer := &deadlineResponse{ResponseRecorder: httptest.NewRecorder()}
+		body := &fileBody{ReadCloser: io.NopCloser(strings.NewReader("input")), controller: http.NewResponseController(writer), now: time.Now}
+		if consume {
+			if _, err := io.Copy(io.Discard, body); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := body.Close(); err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if consume {
+			want = 0
+		}
+		if writer.calls != want {
+			t.Fatalf("consume=%t: deadline calls=%d", consume, writer.calls)
+		}
+	}
+}
 
 type filesDriver struct {
 	*fake.Driver

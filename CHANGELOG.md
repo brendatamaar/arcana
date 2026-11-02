@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add the public Go client with typed v0.1 methods, bounded file transfers, API errors and context-owned streaming exec.
+- Fix successful HTTP file uploads being cancelled by an expired read deadline after EOF.
+
 - Add TTL/idle reaping, supervised volume watchdog, startup crash reconciliation and optional sandbox destruction on shutdown.
 
 - Add binary-safe files API with atomic bounded writes, reads, directory listings, deletion and sandbox-only archive transfer.

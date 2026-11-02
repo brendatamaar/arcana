@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
@@ -46,10 +47,23 @@ type fileBody struct {
 	io.ReadCloser
 	controller *http.ResponseController
 	now        func() time.Time
+	eof        atomic.Bool
 }
 
-func (r fileBody) Close() error {
-	_ = r.controller.SetReadDeadline(r.now())
+func (r *fileBody) Read(data []byte) (int, error) {
+	n, err := r.ReadCloser.Read(data)
+	if err == io.EOF {
+		r.eof.Store(true)
+	}
+	return n, err
+}
+
+func (r *fileBody) Close() error {
+	// After EOF net/http may already be reading the next request. Expiring
+	// that read cancels this request before its successful response is sent.
+	if !r.eof.Load() {
+		_ = r.controller.SetReadDeadline(r.now())
+	}
 	return r.ReadCloser.Close()
 }
 
@@ -100,7 +114,7 @@ func (s *Server) WriteFile(w http.ResponseWriter, r *http.Request, id string, pa
 	response, stop := fileTransport(w, r, "")
 	defer stop()
 	p, _ := auth.FromContext(r.Context())
-	if err := s.lifecycle.WriteFile(r.Context(), p, id, params.Path, fileBody{r.Body, response.controller, response.now}); err != nil {
+	if err := s.lifecycle.WriteFile(r.Context(), p, id, params.Path, &fileBody{ReadCloser: r.Body, controller: response.controller, now: response.now}); err != nil {
 		s.fileError(w, r, nil, err)
 		return
 	}
@@ -170,7 +184,7 @@ func (s *Server) UploadArchive(w http.ResponseWriter, r *http.Request, id string
 	response, stop := fileTransport(w, r, "")
 	defer stop()
 	p, _ := auth.FromContext(r.Context())
-	if err := s.lifecycle.UploadArchive(r.Context(), p, id, params.Path, fileBody{r.Body, response.controller, response.now}); err != nil {
+	if err := s.lifecycle.UploadArchive(r.Context(), p, id, params.Path, &fileBody{ReadCloser: r.Body, controller: response.controller, now: response.now}); err != nil {
 		s.fileError(w, r, nil, err)
 		return
 	}

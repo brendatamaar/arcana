@@ -188,11 +188,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added independent context-owned TTL/idle reaper and supervised bounded volume watchdog without idle activity updates, pre-listener reconciliation with installation-scoped orphan cleanup, interrupted-exec fail-closed recovery, and optional destroy_on_shutdown. Fake-clock/driver boundary, quota, recovery and cleanup-failure tests passed. Actual runsc daemon SIGKILL/restart test (integration and escape) verifies lost cleanup, orphan volume/network removal, NULL unknown exit codes, peer/API/host health and graceful shutdown. Windows/Linux make check, full Linux integration/escape targets and static build passed.
 
-### [ ] T1.14 Go client
+### [x] T1.14 Go client
 - **Deps:** T1.11, T1.12 · **PRD:** FR-SD-1
 - **Do:** `pkg/client`: typed methods for all v0.1 endpoints, streaming exec helper (`ExecStream` returning readers and an exit result), typed errors carrying API error codes, context support, configurable HTTP client. Godoc examples.
 - **Acceptance:** tests against an `httptest` server running the real API with fake driver.
 - **Verify:** `go test ./pkg/client/...`
+
+> Done: Added documented public Go client for every v0.1 endpoint, typed API errors, injected HTTP transport, context cancellation, bounded JSON/binary transfers, pagination and streaming exec readers/stdin/TTY resize/cancel/exit. Real API plus fake-driver tests cover lifecycle, keys, files, ownership and stream completion; protocol tests cover controls, invalid terminal frames, disconnects, limits and blocked-reader cleanup. Fixed the HTTP file-body EOF/read-deadline cancellation race discovered by these tests, retaining interruption of unfinished input. Windows/Linux make check, full runsc integration/escape suites and static build passed; client coverage 86.0%.
 
 ### [ ] T1.15 CLI
 - **Deps:** T1.14 · **PRD:** FR-CL-1, FR-CL-2
@@ -427,6 +429,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Reuse supervised exec for bounded argv-only file utilities and opaque tar streams — shares cleanup/quota/deadline enforcement while preserving the host filesystem boundary; atomic writes, descriptor-sized reads and bounded listings prevent partial replacements and unbounded output — T1.12, PRD FR-FS-1…5, ADR 0003
 
 - 2026-11-02 — Reconcile before listener admission, preserve healthy instances, and fail closed on unfinished exec records after daemon crashes — lost supervision cannot prove process cleanup; close records only after resource removal and leave unknown exit codes NULL. Run independent joined reaper/watchdog loops; watchdog uses supervised bounded du without idle activity updates — T1.13, PRD FR-LC-8 and NFR-REL-1.
+
+- 2026-11-02 — Public Go client uses generated wire-model aliases, finite configurable response/transfer limits, no redirects or automatic mutation retries, and context-owned WebSocket readers/control methods — preserves API compatibility and bounded memory; real-HTTP client tests also found that file-body EOF must suppress a cancellation deadline so a successful upload can finish its response — T1.14, PRD FR-SD-1.
 
 ## Open questions
 

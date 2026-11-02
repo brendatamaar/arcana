@@ -201,6 +201,8 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 ### 7.13 SDKs and reference agent (SD)
 
 - **FR-SD-1 [v0.1]** Go client in `pkg/client` (public, documented, used by the CLI).
+The v0.1 Go client accepts an injected HTTP client and contexts, exposes typed API errors, and does not automatically retry mutations or follow redirects. JSON responses default to a 64 MiB cap and binary transfers to 512 MiB (configurable from 1 byte to 1 GiB). Download bodies must be closed. Streaming exec returns bounded stdout/stderr readers, stdin/control methods and a terminal result; callers drain both readers concurrently and retain the context through Wait, or use Close to cancel and join. The client rejects incomplete terminal frames and disconnects without a terminal result.
+
 - **FR-SD-2 [v0.3]** Python and TypeScript clients generated from `api/openapi.yaml`, with a small hand-written streaming exec wrapper.
 - **FR-SD-3 [v0.3]** Reference agent `examples/fix-agent`: given a repository with a failing test, it creates a sandbox, explores and fixes the code using an LLM through any OpenAI-compatible endpoint (Ollama by default), and verifies the fix by running tests. `--parallel N` mode snapshots after setup and forks N attempts, keeping the first passing one.
 - **FR-SD-4 [v0.3]** A fixtures set of 10 small buggy projects (Python, Node, Go) with hidden tests for evaluating the agent.
