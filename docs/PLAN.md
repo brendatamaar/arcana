@@ -164,11 +164,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added supervised sync exec with strict argv/shell/path validation, real exit metadata, combined capped capture that keeps draining, UTF-8 sanitization, per-sandbox concurrency, independent host/cancellation deadlines and fail-closed destruction on uncertain cleanup. Every accepted exec records timing/counts without output content. HTTP auth/ownership and fake-driver tests, two guard mutations, 36094 fuzz executions, Windows/Linux make check, full integration/escape suites, runsc argv/shell/timeout/cancellation with peer health, static build and serve checks passed. Fixed procfs ESRCH disappearance handling without weakening cleanup proof; the runsc kill attack passed ten repetitions.
 
-### [ ] T1.11 Streaming exec (WebSocket)
+### [x] T1.11 Streaming exec (WebSocket)
 - **Deps:** T1.10 · **PRD:** FR-EX-7, §10.4
 - **Do:** `internal/stream` using `coder/websocket`: protocol messages exactly as PRD §10.4, start-first validation, stdin and stdin_close, TTY + resize, cancel via `sbx-exec kill`, cancel on client disconnect, backpressure with 1 MB send buffer, ping/pong keepalive, close after `exit`.
 - **Acceptance:** tests with an in-process server and fake driver for every message type, disconnect handling and backpressure; integration test streams output of a command that prints over time.
 - **Verify:** `go test ./internal/stream/... && make test-integration`
+
+> Done: Added strict start-first WebSocket protocol, binary-safe live output/stdin, stdin close, TTY/resize, cancellation/disconnect cleanup, 1 MiB bounded backpressure, frame/admission caps, ping/pong and terminal close. Streaming reuses exec proof/quotas/records without retaining output; shutdown drains accepted streams before driver/store closure. In-process fake-driver tests cover all messages, limits, slow readers, ordering and shutdown; two guard mutations and 77798 fuzz cases passed. Windows/Linux make check, full integration/escape suites, real runsc stdin-gated live output/exit, static build and serve checks passed. Console dimensions are forwarded only for TTY execs.
 
 ### [ ] T1.12 Files API
 - **Deps:** T1.10 · **PRD:** FR-FS-1…5
@@ -413,6 +415,10 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-01 — Bound cancellation proof to 10 seconds and retain valid completed-run proof when kill/status consumption races — prevents orphaned long-lived execs while preserving confirmed cleanup; uncertain status/transport destroys the sandbox — T1.10, PRD §9.4
 
 - 2026-11-01 — Account separately for the canonical helper argv prefix while retaining the raw driver cap — supports the existing OpenAPI limit of 256 user arguments without removing any bound; env/label entry limits align with the contract limit of 100 — T1.10
+
+- 2026-11-02 — Use coder/websocket v1.8.15 (ISC) already required by the pinned Goose graph — approved WebSocket dependency with concurrency-safe reads/writes and default same-origin checks; retain Goose v3.29.0 unchanged — T1.11
+
+- 2026-11-02 — Reuse supervised exec for interactive streams, with bounded transport queues/deadlines and 1000 connection admission slots — preserves cleanup proof, quotas and records while preventing pending-start/slow-reader growth; streaming output is forwarded without retaining a sync capture buffer — T1.11, PRD §10.4
 
 ## Open questions
 

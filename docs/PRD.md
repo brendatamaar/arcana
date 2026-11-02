@@ -517,6 +517,10 @@ Server → client:
 
 The server closes the socket after `exit` or `error`. Client disconnect without `exit` cancels the command. Server applies backpressure: if the client stops reading and the send buffer exceeds 1 MB, output is dropped and `truncated` is set.
 
+v0.1 bounds each text frame to 64 KiB, requires `start` within 10 seconds, and queues at most 16 stdin chunks (at most 1 MiB). The encoded output queue, including base64/JSON framing, stays within 1 MiB and 256 packets with reserved space for `started` and the terminal message. Per-exec output limits still apply; output keeps draining after either limit is reached. A server admits at most 1000 WebSocket connections in addition to the per-sandbox exec quota. It pings every 15 seconds, allows 5 seconds for transport writes/pongs, and bounds terminal flushing to 10 seconds. `cancelled` records client cancellation intent, including disconnect, even when the command exits during cancellation; the real exit code still requires helper completion proof.
+
+Shutdown stops stream admission and waits for accepted WebSocket executions to finish cancellation and record cleanup before closing the runtime driver or database; HTTP shutdown alone does not own hijacked connections.
+
 ## 11. Data model (SQLite)
 
 ```sql

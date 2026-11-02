@@ -14,6 +14,8 @@ type capture struct {
 	stdout, stderr     bytes.Buffer
 	outBytes, errBytes int64
 	truncated          bool
+	kept               int64
+	observer           StreamObserver
 }
 type captureWriter struct {
 	target *capture
@@ -29,13 +31,24 @@ func (w captureWriter) Write(p []byte) (int, error) {
 		buffer, count = &c.stderr, &c.errBytes
 	}
 	*count += min(int64(len(p)), math.MaxInt64-*count)
-	remaining := c.limit - int64(c.stdout.Len()) - int64(c.stderr.Len())
+	remaining := c.limit - c.kept
 	kept := min(int64(len(p)), remaining)
+	c.kept += kept
 	if kept < int64(len(p)) {
 		c.truncated = true
 	}
 	// Always report the full write so producers continue draining after the cap.
-	_, _ = buffer.Write(p[:kept])
+	if c.observer == nil {
+		_, _ = buffer.Write(p[:kept])
+	} else {
+		for offset := int64(0); offset < kept; {
+			end := min(kept, offset+16384)
+			if !c.observer.Output(w.stderr, p[offset:end]) {
+				c.truncated = true
+			}
+			offset = end
+		}
+	}
 	return len(p), nil
 }
 

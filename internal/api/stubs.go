@@ -6,11 +6,6 @@ import (
 	"github.com/brendatamaar/arcana/internal/api/gen"
 )
 
-// ExecStream is implemented by its later Phase 1 task.
-func (s *Server) ExecStream(w http.ResponseWriter, r *http.Request, _ string) {
-	s.notImplemented(w, r)
-}
-
 // DeleteFile is implemented by its later Phase 1 task.
 func (s *Server) DeleteFile(w http.ResponseWriter, r *http.Request, _ string, _ gen.DeleteFileParams) {
 	s.notImplemented(w, r)

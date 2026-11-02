@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add WebSocket exec with binary-safe output, interactive stdin and TTY resize, bounded queues, keepalives and cancellation on disconnect.
+
 - Fix runsc controller-disappearance races while retaining required process cleanup proof.
 
 - Add supervised sync exec with real exit codes, combined output caps, UTF-8 sanitization, concurrency limits and host-side cleanup deadlines.

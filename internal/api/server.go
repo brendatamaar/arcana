@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 	"github.com/brendatamaar/arcana/internal/apierr"
@@ -20,15 +22,41 @@ type Server struct {
 	keys      *auth.Service
 	logger    *slog.Logger
 	lifecycle *orchestrator.Service
+	streams   chan struct{}
+	streamMu  sync.Mutex
+	streamWG  sync.WaitGroup
+	closing   bool
 }
 
 // New builds the middleware stack and generated standard-library router.
 func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle *orchestrator.Service) http.Handler {
-	server := &Server{keys: keys, logger: logger, lifecycle: lifecycle}
+	server := &Server{keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})
-	return apierr.RequestIDs(server.recoverPanics(keys.Middleware(bodyLimits(handler, files))))
+	return &managedHandler{Handler: apierr.RequestIDs(server.recoverPanics(keys.Middleware(bodyLimits(handler, files)))), server: server}
+}
+
+type managedHandler struct {
+	http.Handler
+	server *Server
+}
+
+func (h *managedHandler) beginShutdown() {
+	h.server.streamMu.Lock()
+	h.server.closing = true
+	h.server.streamMu.Unlock()
+}
+
+func (h *managedHandler) wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { h.server.streamWG.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Server) recoverPanics(next http.Handler) http.Handler {

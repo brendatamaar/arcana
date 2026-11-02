@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/api"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/helper"
@@ -66,7 +68,7 @@ func TestLifecycle_RealRuntimePersistenceOwnershipAndCleanup(t *testing.T) {
 		}
 	}()
 	keys := auth.New(database, auth.SystemClock{})
-	owner, _, err := keys.Create(ctx, "owner", false)
+	owner, secret, err := keys.Create(ctx, "owner", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +190,8 @@ func TestLifecycle_RealRuntimePersistenceOwnershipAndCleanup(t *testing.T) {
 		t.Fatal("cancellation lost sandbox", err)
 	}
 	docker(t, ctx, "exec", peer.ContainerID.String, "/usr/bin/true")
+	assertStreamEngine(t, ctx, service, p, row.ID)
+	assertLiveStream(t, ctx, api.New(keys, slog.New(slog.NewJSONHandler(io.Discard, nil)), cfg.Limits.Files, service), row.ID, secret)
 	if _, err = service.Get(ctx, auth.Principal{ID: other.ID}, row.ID); !errors.Is(err, orchestrator.ErrNotFound) {
 		t.Fatal("ownership", err)
 	}

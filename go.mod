@@ -3,6 +3,7 @@ module github.com/brendatamaar/arcana
 go 1.27.3
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/containerd/errdefs v1.0.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/knadh/koanf/parsers/yaml v1.1.1

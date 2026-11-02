@@ -13,6 +13,10 @@ import (
 )
 
 func (s *Server) sandboxFailure(w http.ResponseWriter, r *http.Request, err error) {
+	s.failure(w, r, sandboxError(err))
+}
+
+func sandboxError(err error) *apierr.Error {
 	e := apierr.NewInternal("sandbox operation failed")
 	switch {
 	case errors.Is(err, orchestrator.ErrInvalid):
@@ -32,7 +36,7 @@ func (s *Server) sandboxFailure(w http.ResponseWriter, r *http.Request, err erro
 	case errors.Is(err, orchestrator.ErrPath):
 		e = apierr.NewInvalidPath("path outside allowed roots")
 	}
-	s.failure(w, r, e)
+	return e
 }
 
 func sandboxModel(row db.Sandbox) gen.Sandbox {

@@ -51,6 +51,10 @@ func (s *Service) reserveExec(id string) (func(), error) {
 
 // Exec runs one supervised command, always recording accepted execs without output content.
 func (s *Service) Exec(ctx context.Context, p auth.Principal, id string, request ExecRequest) (ExecResult, error) {
+	return s.execute(ctx, p, id, request, nil)
+}
+
+func (s *Service) execute(ctx context.Context, p auth.Principal, id string, request ExecRequest, stream *StreamOptions) (ExecResult, error) {
 	plan, err := resolveExec(s.cfg, request)
 	if err != nil {
 		return ExecResult{}, err
@@ -73,20 +77,27 @@ func (s *Service) Exec(ctx context.Context, p auth.Principal, id string, request
 	if plan.shell {
 		shell = 1
 	}
-	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, StartedAt: started}); err != nil {
+	tty := int64(0)
+	if stream != nil && stream.TTY {
+		tty = 1
+	}
+	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started}); err != nil {
 		return ExecResult{}, fmt.Errorf("recording exec start: %w", err)
 	}
-	return s.superviseExec(ctx, p, row, execID, started, plan)
+	return s.superviseExec(ctx, p, row, execID, started, plan, stream)
 }
 
-func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan) (ExecResult, error) {
+func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan, stream *StreamOptions) (ExecResult, error) {
 	owned, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	timer := s.clock.NewTimer(time.Duration(plan.timeout+10) * time.Second)
 	defer timer.Stop()
 	output := &capture{limit: s.cfg.Limits.Exec.MaxOutputBytes}
+	if stream != nil {
+		output.observer = stream.Observer
+	}
 	completed := make(chan jobResult, 1)
-	go func() { completed <- s.runHelper(owned, row.ContainerID.String, id, plan, output) }()
+	go func() { completed <- s.runHelper(owned, row.ContainerID.String, id, plan, output, stream) }()
 	var done <-chan jobResult = completed
 	var cancellation <-chan error
 	var cancelTimer Timer
@@ -178,7 +189,7 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 	if outcome.status != nil {
 		result.ExitCode = outcome.status.ExitCode
 		result.TimedOut = outcome.status.TimedOut
-		result.Cancelled = outcome.status.Cancelled
+		result.Cancelled = result.Cancelled || outcome.status.Cancelled
 	}
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -188,7 +199,10 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 		activity = row.ExpiresAt
 	}
 	_, activityErr := s.store.Queries.TouchSandbox(recordCtx, db.TouchSandboxParams{ID: row.ID, LastActivityAt: activity})
-	return result, errors.Join(outcome.err, err, activityErr, ctx.Err())
+	if failure := errors.Join(outcome.err, err, activityErr); failure != nil {
+		return result, errors.Join(failure, ctx.Err())
+	}
+	return result, ctx.Err()
 }
 
 func flag(value bool) sql.NullInt64 {
@@ -199,8 +213,28 @@ func flag(value bool) sql.NullInt64 {
 	return result
 }
 
-func (s *Service) runHelper(ctx context.Context, instance, id string, plan execPlan, output *capture) jobResult {
-	exit, err := s.transfer(ctx, instance, plan.request(id), plan.stdin, output)
+func (s *Service) runHelper(ctx context.Context, instance, id string, plan execPlan, output *capture, stream *StreamOptions) jobResult {
+	request := plan.request(id)
+	var stdin io.Reader = bytes.NewReader(plan.stdin)
+	var attached func(runtime.ExecSession)
+	if stream != nil {
+		request.TTY = stream.TTY
+		if stream.TTY {
+			request.Cols = stream.Cols
+			request.Rows = stream.Rows
+			args := append([]string{}, request.Cmd[:8]...)
+			args = append(args, "--tty")
+			request.Cmd = append(args, request.Cmd[8:]...)
+		}
+		if stream.Stdin != nil {
+			stop := context.AfterFunc(ctx, func() { _ = stream.Stdin.Close() })
+			defer stop()
+			defer func() { _ = stream.Stdin.Close() }()
+			stdin = streamInput{Reader: io.MultiReader(stdin, stream.Stdin), Closer: stream.Stdin}
+		}
+		attached = func(session runtime.ExecSession) { stream.Observer.Started(id, StreamControls{Resize: session.Resize}) }
+	}
+	exit, err := s.transfer(ctx, instance, request, stdin, output, attached)
 	if err != nil {
 		return jobResult{err: err}
 	}
@@ -220,7 +254,7 @@ func (s *Service) runHelper(ctx context.Context, instance, id string, plan execP
 
 func (s *Service) control(ctx context.Context, instance string, argv []string) ([]byte, runtime.ExitInfo, error) {
 	output := &capture{limit: 4096}
-	exit, err := s.transfer(ctx, instance, runtime.ExecRequest{Cmd: argv, Cwd: "/workspace"}, nil, output)
+	exit, err := s.transfer(ctx, instance, runtime.ExecRequest{Cmd: argv, Cwd: "/workspace"}, bytes.NewReader(nil), output, nil)
 	if err != nil {
 		return nil, exit, err
 	}
@@ -230,12 +264,15 @@ func (s *Service) control(ctx context.Context, instance string, argv []string) (
 	return output.stdout.Bytes(), exit, nil
 }
 
-func (s *Service) transfer(ctx context.Context, instance string, request runtime.ExecRequest, stdin []byte, output *capture) (runtime.ExitInfo, error) {
+func (s *Service) transfer(ctx context.Context, instance string, request runtime.ExecRequest, stdin io.Reader, output *capture, attached func(runtime.ExecSession)) (runtime.ExitInfo, error) {
 	owned, cancel := context.WithCancel(ctx)
 	defer cancel()
 	session, err := s.driver.Exec(owned, instance, request)
 	if err != nil {
 		return runtime.ExitInfo{}, err
+	}
+	if attached != nil {
+		attached(session)
 	}
 	var group errgroup.Group
 	copyOutput := func(reader io.Reader, stderr bool) func() error {
@@ -254,14 +291,30 @@ func (s *Service) transfer(ctx context.Context, instance string, request runtime
 	group.Go(func() error {
 		// A command may legitimately exit without consuming stdin (EPIPE).
 		writer := session.Stdin()
-		_, _ = io.Copy(writer, bytes.NewReader(stdin))
+		_, _ = io.Copy(writer, stdin)
 		_ = writer.Close()
 		return nil
 	})
-	if err = group.Wait(); err != nil {
-		return runtime.ExitInfo{}, err
+	type completion struct {
+		exit runtime.ExitInfo
+		err  error
 	}
-	return session.Wait(owned)
+	completed := make(chan completion, 1)
+	go func() {
+		exit, err := session.Wait(owned)
+		if err != nil {
+			cancel()
+		}
+		// Process exit must release an interactive stdin reader even if the
+		// client never sent stdin_close. Stream EOF is independent of stdin.
+		if closer, ok := stdin.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		completed <- completion{exit, err}
+	}()
+	copyErr := group.Wait()
+	result := <-completed
+	return result.exit, errors.Join(copyErr, result.err)
 }
 
 func parseStatus(data []byte, id string, transport int) (protocol.Status, error) {

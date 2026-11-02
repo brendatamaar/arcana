@@ -24,7 +24,17 @@ func Serve(ctx context.Context, listener net.Listener, handler http.Handler, tim
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		drainer, managed := handler.(interface {
+			beginShutdown()
+			wait(context.Context) error
+		})
+		if managed {
+			drainer.beginShutdown()
+		}
 		err := server.Shutdown(shutdownCtx)
+		if err == nil && managed {
+			err = drainer.wait(shutdownCtx)
+		}
 		if err != nil {
 			_ = server.Close()
 		}
