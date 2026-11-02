@@ -114,6 +114,10 @@ func execute(args []string, dir string) (int, error) {
 	if len(args) == 0 {
 		return 0, errors.New("expected run, kill or status")
 	}
+	switch args[0] {
+	case "write", "read", "ls", "remove", "mkdir", "stat":
+		return fileCommand(args, os.Stdin, os.Stdout)
+	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	id := flags.String("id", "", "exec ID")

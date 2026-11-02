@@ -172,11 +172,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added strict start-first WebSocket protocol, binary-safe live output/stdin, stdin close, TTY/resize, cancellation/disconnect cleanup, 1 MiB bounded backpressure, frame/admission caps, ping/pong and terminal close. Streaming reuses exec proof/quotas/records without retaining output; shutdown drains accepted streams before driver/store closure. In-process fake-driver tests cover all messages, limits, slow readers, ordering and shutdown; two guard mutations and 77798 fuzz cases passed. Windows/Linux make check, full integration/escape suites, real runsc stdin-gated live output/exit, static build and serve checks passed. Console dimensions are forwarded only for TTY execs.
 
-### [ ] T1.12 Files API
+### [x] T1.12 Files API
 - **Deps:** T1.10 · **PRD:** FR-FS-1…5
 - **Do:** Path validation (absolute, cleaned, under `allowed_roots`, reject NUL and `..` escape, including URL-encoded forms decoded by the router); operations through exec inside the sandbox: write (stdin → a stdlib-only `sbx-exec write` subcommand via argv, creating parent dirs; shared path validation before use), read (with size check first via `stat`), list (`find` with depth or a small helper subcommand of `sbx-exec` producing JSON — prefer the helper for consistent output), delete, archive upload (`tar -xzf - -C path`) and download (`tar -czf - -C path .`), size caps enforced while streaming.
 - **Acceptance:** path validation table tests; integration tests for each operation; symlink in workspace pointing to `/etc/passwd` returns the **sandbox's** file, never the host's.
 - **Verify:** `go test ./internal/orchestrator/... && make test-integration`
+
+> Done: Added shared lexical path validation, sandbox-local argv-only file utilities, atomic bounded writes, descriptor-sized binary reads, bounded listings, deletion and opaque tar upload/download through supervised exec. Auth/ownership, encoded traversal, binary/limit and malformed metadata tests passed; containment mutation failed as expected and 255703 fuzz inputs passed. Windows/Linux make check, full runsc integration/escape suites, static build and serve probe passed. Coverage: path validator 100%, API 88.4%, orchestrator 83.7%.
 
 ### [ ] T1.13 Reaper, watchdog and reconciliation
 - **Deps:** T1.9, T1.10 · **PRD:** FR-LC-5, FR-LC-7, FR-LC-8, FR-RL-3, NFR-REL-1
@@ -419,6 +421,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Use coder/websocket v1.8.15 (ISC) already required by the pinned Goose graph — approved WebSocket dependency with concurrency-safe reads/writes and default same-origin checks; retain Goose v3.29.0 unchanged — T1.11
 
 - 2026-11-02 — Reuse supervised exec for interactive streams, with bounded transport queues/deadlines and 1000 connection admission slots — preserves cleanup proof, quotas and records while preventing pending-start/slow-reader growth; streaming output is forwarded without retaining a sync capture buffer — T1.11, PRD §10.4
+
+- 2026-11-02 — Reuse supervised exec for bounded argv-only file utilities and opaque tar streams — shares cleanup/quota/deadline enforcement while preserving the host filesystem boundary; atomic writes, descriptor-sized reads and bounded listings prevent partial replacements and unbounded output — T1.12, PRD FR-FS-1…5, ADR 0003
 
 ## Open questions
 

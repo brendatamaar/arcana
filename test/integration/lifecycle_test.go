@@ -82,6 +82,8 @@ func TestLifecycle_RealRuntimePersistenceOwnershipAndCleanup(t *testing.T) {
 	cfg.Limits.Defaults.MemoryMB = 128
 	cfg.Limits.Defaults.DiskMB = 16
 	cfg.Limits.Defaults.CPUs = .25
+	cfg.Limits.Files.MaxFileBytes = 1024
+	cfg.Limits.Files.MaxArchiveBytes = 4096
 	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
 	row, err := service.Create(ctx, p, orchestrator.CreateRequest{Template: "base", Labels: map[string]string{"project": "live"}})
 	if err != nil {
@@ -192,6 +194,7 @@ func TestLifecycle_RealRuntimePersistenceOwnershipAndCleanup(t *testing.T) {
 	docker(t, ctx, "exec", peer.ContainerID.String, "/usr/bin/true")
 	assertStreamEngine(t, ctx, service, p, row.ID)
 	assertLiveStream(t, ctx, api.New(keys, slog.New(slog.NewJSONHandler(io.Discard, nil)), cfg.Limits.Files, service), row.ID, secret)
+	assertFiles(t, ctx, service, p, row.ID, api.New(keys, slog.New(slog.NewJSONHandler(io.Discard, nil)), cfg.Limits.Files, service), secret)
 	if _, err = service.Get(ctx, auth.Principal{ID: other.ID}, row.ID); !errors.Is(err, orchestrator.ErrNotFound) {
 		t.Fatal("ownership", err)
 	}

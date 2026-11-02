@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,8 @@ func TestValidate(t *testing.T) {
 		{"timeout", "limits.exec.default_timeout_seconds", func(c *Config) { c.Limits.Exec.DefaultTimeoutSeconds = 3601 }},
 		{"size", "limits.files.max_file_bytes", func(c *Config) { c.Limits.Files.MaxFileBytes = 524288001 }},
 		{"roots empty", "limits.files.allowed_roots", func(c *Config) { c.Limits.Files.AllowedRoots = nil }},
+		{"roots cap", "limits.files.allowed_roots", func(c *Config) { c.Limits.Files.AllowedRoots = make([]string, 17) }},
+		{"archive overflow", "limits.files.max_archive_bytes", func(c *Config) { c.Limits.Files.MaxArchiveBytes = math.MaxInt64 }},
 		{"roots relative", "limits.files.allowed_roots", func(c *Config) { c.Limits.Files.AllowedRoots = []string{"relative"} }},
 		{"roots unclean", "limits.files.allowed_roots", func(c *Config) { c.Limits.Files.AllowedRoots = []string{"/workspace/.."} }},
 		{"backend", "workspace.backend", func(c *Config) { c.Workspace.Backend = "unknown" }},

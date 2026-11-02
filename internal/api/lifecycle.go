@@ -35,6 +35,12 @@ func sandboxError(err error) *apierr.Error {
 		e = apierr.NewExecLimitReached("exec concurrency limit reached")
 	case errors.Is(err, orchestrator.ErrPath):
 		e = apierr.NewInvalidPath("path outside allowed roots")
+	case errors.Is(err, orchestrator.ErrFileNotFound):
+		e = apierr.NewFileNotFound("sandbox file not found")
+	case errors.Is(err, orchestrator.ErrFileDenied):
+		e = apierr.NewForbidden("sandbox file access denied")
+	case errors.Is(err, orchestrator.ErrFileTooLarge):
+		e = apierr.NewPayloadTooLarge("file operation exceeds limit")
 	}
 	return e
 }

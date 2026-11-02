@@ -116,6 +116,8 @@ Requirement tags below (`[v0.1]`, `[v0.2]`, …) state the release in which each
 - **FR-FS-3 [v0.1]** Paths must be absolute, are lexically cleaned, and must be under an allowed root (`/workspace`, `/tmp` by default). `..` escapes are rejected with `invalid_path`.
 - **FR-FS-4 [v0.1]** All file operations execute **inside** the sandbox (via exec of tools in the sandbox), never by the host opening files from the workspace on the host filesystem. This makes symlink tricks harmless: they can only resolve to paths inside the sandbox.
 - **FR-FS-5 [v0.1]** Size caps: `limits.files.max_file_bytes` per file, `limits.files.max_archive_bytes` per archive.
+File transfers use the supervised exec path, including ownership, concurrency, activity, cleanup proof and host deadlines. The argv-only helper validates the same allowed roots (1..16) as the host. Writes use a bounded temporary file and atomic rename; oversized writes preserve the previous file. Reads stat the opened regular-file descriptor before sending a bounded size header and exactly that many bytes. Directory listings are limited to depth 1..100, 1000 entries and 8 MiB of metadata. Archive extraction remains entirely inside the sandbox; compressed streams are capped, and a failed extraction may leave partial sandbox files. A failure after binary HTTP headers aborts the response rather than appending a JSON error.
+
 - **FR-FS-6 [v0.1]** File writes and deletes are recorded in the audit log (path and size, not contents) from v0.2.
 
 ### 7.4 Resource limits and workspace (RL)

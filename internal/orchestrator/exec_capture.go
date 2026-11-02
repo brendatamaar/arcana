@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"bytes"
+	"io"
 	"math"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ type capture struct {
 	truncated          bool
 	kept               int64
 	observer           StreamObserver
+	sink               io.Writer
+	sinkErr            error
 }
 type captureWriter struct {
 	target *capture
@@ -31,6 +34,11 @@ func (w captureWriter) Write(p []byte) (int, error) {
 		buffer, count = &c.stderr, &c.errBytes
 	}
 	*count += min(int64(len(p)), math.MaxInt64-*count)
+	if c.sink != nil && w.stderr {
+		kept := min(len(p), 4096-c.stderr.Len())
+		_, _ = c.stderr.Write(p[:kept])
+		return len(p), nil
+	}
 	remaining := c.limit - c.kept
 	kept := min(int64(len(p)), remaining)
 	c.kept += kept
@@ -38,7 +46,15 @@ func (w captureWriter) Write(p []byte) (int, error) {
 		c.truncated = true
 	}
 	// Always report the full write so producers continue draining after the cap.
-	if c.observer == nil {
+	if c.sink != nil {
+		if c.sinkErr == nil {
+			var n int
+			n, c.sinkErr = c.sink.Write(p[:kept])
+			if c.sinkErr == nil && int64(n) != kept {
+				c.sinkErr = io.ErrShortWrite
+			}
+		}
+	} else if c.observer == nil {
 		_, _ = buffer.Write(p[:kept])
 	} else {
 		for offset := int64(0); offset < kept; {

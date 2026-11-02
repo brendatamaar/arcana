@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/pathutil"
 	"github.com/brendatamaar/arcana/internal/runtime"
 )
 
@@ -140,19 +141,6 @@ func validateMap(values map[string]string, env bool) error {
 }
 
 func allowedPath(value string, roots []string) bool {
-	if !path.IsAbs(value) || strings.ContainsRune(value, 0) {
-		return false
-	}
-	for _, part := range strings.Split(value, "/") {
-		if part == ".." {
-			return false
-		}
-	}
-	clean := path.Clean(value)
-	for _, root := range roots {
-		if clean == root || strings.HasPrefix(clean, strings.TrimSuffix(root, "/")+"/") {
-			return true
-		}
-	}
-	return false
+	_, err := pathutil.Clean(value, roots)
+	return err == nil
 }

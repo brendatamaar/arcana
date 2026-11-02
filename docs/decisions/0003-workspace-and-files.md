@@ -29,3 +29,5 @@ Custom volume-backed templates must do the same (PRD FR-TP-4). The driver
 rejects images declaring other writable volumes, retaining the read-only root
 boundary. The minimal local image becomes the default until T2.1 publishes the
 official templates.
+
+T1.12: use argv-only helper read/write/list/remove/mkdir/stat utilities through supervised exec. Shared lexical validation bounds paths and roots; an opened-descriptor size header prevents unbounded or raced reads. Atomic temporary writes preserve old files on overflow. Listing metadata is bounded to 1000 entries/8 MiB and depth 100. The host streams opaque tar data only; late binary-response failures abort HTTP rather than corrupting payloads with JSON.

@@ -62,7 +62,10 @@ func (h *managedHandler) wait(ctx context.Context) error {
 func (s *Server) recoverPanics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if recover() != nil {
+			if recovered := recover(); recovered != nil {
+				if recovered == http.ErrAbortHandler {
+					panic(recovered)
+				}
 				s.logger.ErrorContext(r.Context(), "request panic recovered", "request_id", apierr.RequestID(r.Context()))
 				s.failure(w, r, apierr.NewInternal("internal server error"))
 			}
@@ -85,7 +88,11 @@ func bodyLimits(next http.Handler, files config.Files) http.Handler {
 			_ = apierr.Write(w, r, apierr.NewPayloadTooLarge("request body exceeds limit"))
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		readLimit := limit
+		if r.Method == http.MethodPut && (strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/files/archive")) {
+			readLimit++
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, readLimit)
 		next.ServeHTTP(w, r)
 	})
 }

@@ -59,6 +59,10 @@ func (s *Service) execute(ctx context.Context, p auth.Principal, id string, requ
 	if err != nil {
 		return ExecResult{}, err
 	}
+	return s.executePlan(ctx, p, id, plan, stream, nil)
+}
+
+func (s *Service) executePlan(ctx context.Context, p auth.Principal, id string, plan execPlan, stream *StreamOptions, files *fileIO) (ExecResult, error) {
 	row, err := s.Activity(ctx, p, id)
 	if err != nil {
 		return ExecResult{}, err
@@ -84,10 +88,10 @@ func (s *Service) execute(ctx context.Context, p auth.Principal, id string, requ
 	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started}); err != nil {
 		return ExecResult{}, fmt.Errorf("recording exec start: %w", err)
 	}
-	return s.superviseExec(ctx, p, row, execID, started, plan, stream)
+	return s.superviseExec(ctx, p, row, execID, started, plan, stream, files)
 }
 
-func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan, stream *StreamOptions) (ExecResult, error) {
+func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan, stream *StreamOptions, files *fileIO) (ExecResult, error) {
 	owned, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	timer := s.clock.NewTimer(time.Duration(plan.timeout+10) * time.Second)
@@ -96,8 +100,12 @@ func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sa
 	if stream != nil {
 		output.observer = stream.Observer
 	}
+	if files != nil {
+		output.limit = files.limit
+		output.sink = files.output
+	}
 	completed := make(chan jobResult, 1)
-	go func() { completed <- s.runHelper(owned, row.ContainerID.String, id, plan, output, stream) }()
+	go func() { completed <- s.runHelper(owned, row.ContainerID.String, id, plan, output, stream, files) }()
 	var done <-chan jobResult = completed
 	var cancellation <-chan error
 	var cancelTimer Timer
@@ -199,7 +207,7 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 		activity = row.ExpiresAt
 	}
 	_, activityErr := s.store.Queries.TouchSandbox(recordCtx, db.TouchSandboxParams{ID: row.ID, LastActivityAt: activity})
-	if failure := errors.Join(outcome.err, err, activityErr); failure != nil {
+	if failure := errors.Join(outcome.err, err, activityErr, output.sinkErr); failure != nil {
 		return result, errors.Join(failure, ctx.Err())
 	}
 	return result, ctx.Err()
@@ -213,7 +221,7 @@ func flag(value bool) sql.NullInt64 {
 	return result
 }
 
-func (s *Service) runHelper(ctx context.Context, instance, id string, plan execPlan, output *capture, stream *StreamOptions) jobResult {
+func (s *Service) runHelper(ctx context.Context, instance, id string, plan execPlan, output *capture, stream *StreamOptions, files *fileIO) jobResult {
 	request := plan.request(id)
 	var stdin io.Reader = bytes.NewReader(plan.stdin)
 	var attached func(runtime.ExecSession)
@@ -233,6 +241,12 @@ func (s *Service) runHelper(ctx context.Context, instance, id string, plan execP
 			stdin = streamInput{Reader: io.MultiReader(stdin, stream.Stdin), Closer: stream.Stdin}
 		}
 		attached = func(session runtime.ExecSession) { stream.Observer.Started(id, StreamControls{Resize: session.Resize}) }
+	}
+	if files != nil && files.input != nil {
+		stop := context.AfterFunc(ctx, func() { _ = files.input.Close() })
+		defer stop()
+		defer func() { _ = files.input.Close() }()
+		stdin = files.input
 	}
 	exit, err := s.transfer(ctx, instance, request, stdin, output, attached)
 	if err != nil {

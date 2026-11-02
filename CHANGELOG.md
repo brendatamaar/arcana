@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add binary-safe files API with atomic bounded writes, reads, directory listings, deletion and sandbox-only archive transfer.
+
 - Add WebSocket exec with binary-safe output, interactive stdin and TTY resize, bounded queues, keepalives and cancellation on disconnect.
 
 - Fix runsc controller-disappearance races while retaining required process cleanup proof.

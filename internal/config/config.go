@@ -19,6 +19,7 @@ import (
 	"github.com/knadh/koanf/v2"
 
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
+	"github.com/brendatamaar/arcana/internal/pathutil"
 )
 
 // DefaultPath is the operator configuration path.
@@ -228,11 +229,14 @@ func (c Config) Validate() error {
 	if c.Limits.Files.MaxFileBytes > c.Limits.Files.MaxArchiveBytes {
 		bad("limits.files.max_file_bytes", "exceeds limits.files.max_archive_bytes")
 	}
-	if len(c.Limits.Files.AllowedRoots) == 0 {
-		bad("limits.files.allowed_roots", "must not be empty")
+	if len(c.Limits.Files.AllowedRoots) == 0 || len(c.Limits.Files.AllowedRoots) > pathutil.MaxRoots {
+		bad("limits.files.allowed_roots", "must contain 1..16 roots")
+	}
+	if c.Limits.Files.MaxArchiveBytes > math.MaxInt64-4096 {
+		bad("limits.files.max_archive_bytes", "must allow one overflow-detection byte")
 	}
 	for _, root := range c.Limits.Files.AllowedRoots {
-		if !path.IsAbs(root) || strings.ContainsRune(root, 0) || path.Clean(root) != root {
+		if !path.IsAbs(root) || strings.ContainsRune(root, 0) || path.Clean(root) != root || len(root) > 4096 {
 			bad("limits.files.allowed_roots", "must contain clean absolute paths")
 		}
 	}
