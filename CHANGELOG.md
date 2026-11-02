@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add remote sandbox, exec and files CLI commands with tables/JSON, environment credentials, TTY/stdin and real remote exit codes.
+
 - Add the public Go client with typed v0.1 methods, bounded file transfers, API errors and context-owned streaming exec.
 - Fix successful HTTP file uploads being cancelled by an expired read deadline after EOF.
 

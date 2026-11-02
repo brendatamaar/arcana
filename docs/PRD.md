@@ -170,6 +170,8 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 
 - **FR-CL-1 [v0.1]** Subcommands: `serve`, `doctor`, `keys`, `sandbox create|list|get|rm`, `exec`, `files put|get|ls`, `version`. Client subcommands use `--server` and `--api-key` (or `ARCANA_URL`, `ARCANA_API_KEY`).
 - **FR-CL-2 [v0.1]** `arcana exec <id> -- <argv...>` streams output and exits with the remote command's exit code.
+Client commands accept `--server`/`--api-key` (or `ARCANA_URL`/`ARCANA_API_KEY`), and `--json` for metadata. Exec requires `<id> -- <argv...>`; normal mode streams stdout/stderr, while JSON mode drains both and emits terminal metadata. `--stdin` forwards input; `--tty` implies stdin and requires a Linux terminal, with raw mode restored on completion and initial terminal dimensions forwarded. Files use `put <id> <local-file|-> <sandbox-path>`, `get <id> <sandbox-path> [local-file|-]`, and `ls <id> <sandbox-path>`. Downloads are raw bytes and reject `--json`; a named local destination is created with mode 0600 and must not already exist.
+
 - **FR-CL-3 [v0.2]** `arcana proxy` runs the egress proxy (used inside the proxy container).
 - **FR-CL-4 [v0.3]** `arcana mcp` runs the MCP server over stdio.
 - **FR-CL-5 [v0.3]** `arcana bench` runs the benchmark scenarios and writes JSON and Markdown results.

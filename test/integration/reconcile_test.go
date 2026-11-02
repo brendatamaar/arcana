@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -219,6 +220,30 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	peer := request("POST", "/v1/sandboxes/"+healthy+"/exec", `{"cmd":["/bin/echo","healthy"]}`)
 	if peer["stdout"] != "healthy\n" || peer["exit_code"] != float64(0) {
 		t.Fatal("peer unhealthy")
+	}
+	// Exercise the public CLI against the live daemon, including OS exit status
+	// and successful binary HTTP uploads through the normal streaming client.
+	cliArgs := []string{"--server", base, "--api-key", strings.TrimSpace(string(secret))}
+	command := exec.CommandContext(ctx, binary, append(cliArgs, "exec", healthy, "--", "/bin/sh", "-c", "printf cli; exit 7")...)
+	var cliOut bytes.Buffer
+	command.Stdout = &cliOut
+	cliErr := command.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(cliErr, &exitErr) || exitErr.ExitCode() != 7 || cliOut.String() != "cli" {
+		t.Fatal("live CLI exit", cliErr, cliOut.String())
+	}
+	localFile := filepath.Join(dir, "upload.bin")
+	if err = os.WriteFile(localFile, []byte{0, 255, 'x'}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "put", healthy, localFile, "/workspace/cli.bin")...)
+	if err = command.Run(); err != nil {
+		t.Fatal("live CLI upload", err)
+	}
+	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "get", healthy, "/workspace/cli.bin")...)
+	cliBytes, err := command.Output()
+	if err != nil || !bytes.Equal(cliBytes, []byte{0, 255, 'x'}) {
+		t.Fatal("live CLI binary download", err, cliBytes)
 	}
 	database, err = store.Open(ctx, filepath.Join(dir, "arcana.db"))
 	if err != nil {

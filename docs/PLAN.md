@@ -196,11 +196,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added documented public Go client for every v0.1 endpoint, typed API errors, injected HTTP transport, context cancellation, bounded JSON/binary transfers, pagination and streaming exec readers/stdin/TTY resize/cancel/exit. Real API plus fake-driver tests cover lifecycle, keys, files, ownership and stream completion; protocol tests cover controls, invalid terminal frames, disconnects, limits and blocked-reader cleanup. Fixed the HTTP file-body EOF/read-deadline cancellation race discovered by these tests, retaining interruption of unfinished input. Windows/Linux make check, full runsc integration/escape suites and static build passed; client coverage 86.0%.
 
-### [ ] T1.15 CLI
+### [x] T1.15 CLI
 - **Deps:** T1.14 · **PRD:** FR-CL-1, FR-CL-2
 - **Do:** Client subcommands via `pkg/client`: `sandbox create|list|get|rm`, `exec <id> -- argv` (streams; exits with remote code; `--tty` when stdin is a terminal), `files put|get|ls`. Human-readable tables by default, `--json` for scripting. `--server`/`--api-key` flags and env vars.
 - **Acceptance:** CLI tests using the client against an in-process server; `arcana exec` returns the remote exit code.
 - **Verify:** `go test ./cmd/arcana/...`
+
+> Done: Added client-backed sandbox create/list/get/rm, streaming argv exec, files put/get/ls, tables/JSON, server/key environment flags, opt-in stdin and Linux TTY raw-mode restoration. Context cancellation joins stream/input readers; named downloads use exclusive 0600 creation. In-process CLI tests, child-process exit-7 assertion and Linux pseudoterminal restoration test passed. Actual daemon/runsc integration verifies CLI exit 7 and binary put/get. Windows/Linux make check, full runsc integration/escape suites and static Linux build passed.
 
 ### [ ] T1.16 Doctor
 - **Deps:** T1.7, T1.3 · **PRD:** FR-DR-1…3
@@ -431,6 +433,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Reconcile before listener admission, preserve healthy instances, and fail closed on unfinished exec records after daemon crashes — lost supervision cannot prove process cleanup; close records only after resource removal and leave unknown exit codes NULL. Run independent joined reaper/watchdog loops; watchdog uses supervised bounded du without idle activity updates — T1.13, PRD FR-LC-8 and NFR-REL-1.
 
 - 2026-11-02 — Public Go client uses generated wire-model aliases, finite configurable response/transfer limits, no redirects or automatic mutation retries, and context-owned WebSocket readers/control methods — preserves API compatibility and bounded memory; real-HTTP client tests also found that file-body EOF must suppress a cancellation deadline so a successful upload can finish its response — T1.14, PRD FR-SD-1.
+
+- 2026-11-02 — CLI exec requires explicit argv separation and uses context-owned stream readers; stdin is opt-in except for TTY, and JSON exec emits terminal metadata after draining output — prevents leaked stdin readers and mixed JSON/binary output. Linux TTY uses stdlib ioctl/raw-mode handling without a new dependency; named downloads use exclusive 0600 creation — T1.15, PRD FR-CL-1/2.
 
 ## Open questions
 
