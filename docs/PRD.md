@@ -367,6 +367,8 @@ Docker's exec API cannot signal or kill an exec'd process. To satisfy FR-EX-4, A
 
 Helper transport exits are `0` for a completed successful command, `124` for a completed nonzero command, and `125` for helper failure. The real command exit code is in the status metadata and is returned unchanged by the REST API, streaming protocol and `arcana exec`. The host accepts completion only when the ID, cleanup marker and transport exit agree. Other transport exits, missing/invalid status, or uncertain cleanup require sandbox destruction; the independent host hard deadline remains mandatory. The runtime must implement child subreapers and pidfd signalling (Linux >= 5.3 for runc, or a supporting runsc); unsupported runtimes fail closed and doctor reports the required upgrade.
 
+After client cancellation, the host allows at most 10 seconds to confirm command cleanup; otherwise it destroys the sandbox. If consuming status races with the kill control, an already-validated completed run remains authoritative once both host operations have ended.
+
 The helper is the seed of the stretch-goal `envd` daemon used by the Firecracker driver.
 
 ### 9.5 Labels and naming

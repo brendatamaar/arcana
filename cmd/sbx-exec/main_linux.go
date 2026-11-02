@@ -196,6 +196,12 @@ func cancelCommand(root *os.Root, id string, grace time.Duration, c clock) (int,
 	}
 	defer func() { _ = procRoot.Close() }()
 	info, err := readProcess(procRoot, controller.PID)
+	if processGone(err) {
+		if completedStatus(root, id) {
+			return 0, nil
+		}
+		return 0, errors.New("controller ended without cleanup proof")
+	}
 	if err != nil || info.StartTicks != controller.StartTicks {
 		return 0, errors.New("controller identity changed")
 	}
@@ -209,10 +215,8 @@ func cancelCommand(root *os.Root, id string, grace time.Duration, c clock) (int,
 	defer poll.Stop()
 	for {
 		current, readErr := readProcess(procRoot, controller.PID)
-		if errors.Is(readErr, os.ErrNotExist) || readErr == nil && current.StartTicks != controller.StartTicks {
-			data, statusErr := readMetadata(root, id+".json")
-			var status protocol.Status
-			if statusErr == nil && json.Unmarshal(data, &status) == nil && status.ID == id && status.CleanupComplete {
+		if processGone(readErr) || readErr == nil && current.StartTicks != controller.StartTicks {
+			if completedStatus(root, id) {
 				return 0, nil
 			}
 			return 0, errors.New("controller ended without cleanup proof")
@@ -226,6 +230,12 @@ func cancelCommand(root *os.Root, id string, grace time.Duration, c clock) (int,
 		case <-poll.Chan():
 		}
 	}
+}
+
+func completedStatus(root *os.Root, id string) bool {
+	data, err := readMetadata(root, id+".json")
+	var status protocol.Status
+	return err == nil && json.Unmarshal(data, &status) == nil && status.ID == id && status.CleanupComplete
 }
 
 func runCommand(root *os.Root, id string, argv []string, cwd string, timeout int, tty bool, c clock) (code int, runErr error) {

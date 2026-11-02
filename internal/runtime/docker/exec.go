@@ -5,11 +5,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/moby/moby/client"
 
+	"github.com/brendatamaar/arcana/internal/helper/protocol"
 	"github.com/brendatamaar/arcana/internal/runtime"
 )
 
@@ -58,7 +62,7 @@ func (d *Driver) cancelSessions(id string) {
 
 // Exec attaches once, uses pipe backpressure and owns all stream cleanup.
 func (d *Driver) Exec(ctx context.Context, id string, request runtime.ExecRequest) (runtime.ExecSession, error) {
-	if len(request.Cmd) == 0 || request.Cmd[0] == "" || len(request.Cmd) > 256 {
+	if len(request.Cmd) == 0 || request.Cmd[0] == "" || len(request.Cmd) > commandArgLimit(request.Cmd) {
 		return nil, runtime.Invalid{Field: "cmd"}
 	}
 	size := 0
@@ -114,6 +118,27 @@ func (d *Driver) Exec(ctx context.Context, id string, request runtime.ExecReques
 		stop()
 	}()
 	return session, nil
+}
+
+// The fixed supervisor prefix is additional to the API's 256 user arguments.
+// Only the canonical, bounded wrapper receives that allowance; raw exec stays capped.
+func commandArgLimit(argv []string) int {
+	const rawLimit = 256
+	if len(argv) < 10 || argv[0] != "/opt/arcana/sbx-exec" || argv[1] != "run" || argv[2] != "--id" || len(argv[3]) == 0 || len(argv[3]) > 64 || strings.ContainsRune(argv[3], 0) || argv[4] != "--timeout" || argv[6] != "--cwd" || !path.IsAbs(argv[7]) || len(argv[7]) > 4096 || strings.ContainsRune(argv[7], 0) {
+		return rawLimit
+	}
+	timeout, err := strconv.ParseUint(argv[5], 10, 16)
+	if err != nil || timeout < 1 || timeout > protocol.MaxTimeoutSeconds {
+		return rawLimit
+	}
+	separator := 8
+	if argv[separator] == "--tty" {
+		separator++
+	}
+	if len(argv) <= separator+1 || argv[separator] != "--" {
+		return rawLimit
+	}
+	return rawLimit + separator + 1
 }
 
 // Stream each Docker frame with fixed-size copying rather than allocating its declared size.

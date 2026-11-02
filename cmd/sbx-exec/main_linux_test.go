@@ -4,10 +4,24 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
 )
+
+func TestProcessGone_OnlyAcceptsMissingProcessErrors(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		gone bool
+	}{
+		{os.ErrNotExist, true}, {syscall.ESRCH, true}, {&os.PathError{Op: "read", Path: "/proc/42/stat", Err: syscall.ESRCH}, true}, {syscall.EPERM, false}, {syscall.EIO, false}, {nil, false},
+	} {
+		if processGone(test.err) != test.gone {
+			t.Fatalf("incorrect process disappearance classification: %v", test.err)
+		}
+	}
+}
 
 func TestID_RejectsUnsafePaths(t *testing.T) {
 	for _, value := range []string{"", "../bad", "/tmp/bad", "x.y", "x\x00", "A"} {

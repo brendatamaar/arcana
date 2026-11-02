@@ -120,7 +120,7 @@ func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
 }
 
 func validateMap(values map[string]string, env bool) error {
-	if len(values) > 64 {
+	if len(values) > 100 {
 		return fmt.Errorf("%w: too many env or label entries", ErrInvalid)
 	}
 	total := 0

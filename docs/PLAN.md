@@ -156,11 +156,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added pure lifecycle decisions, atomic quota reservations and transition history, template/env/resource/TTL resolution, ownership-filtered state/label pagination, idempotent destroy and TTL-preserving activity. Sandbox HTTP handlers and production Docker wiring are active. Fake-driver/API race tests, terminal-state mutation proof, 2866 fuzz executions, Windows and Linux make check, full integration/escape suites, real runsc lifecycle and static build/serve checks passed.
 
-### [ ] T1.10 Sync exec
+### [x] T1.10 Sync exec
 - **Deps:** T1.8, T1.9 · **PRD:** FR-EX-1…3, FR-EX-5, FR-EX-6, FR-EX-8, FR-EX-9
 - **Do:** Exec manager that wraps commands with `sbx-exec run`, enforces timeout defaults and maximums, captures output with a combined cap (keeps draining after the cap), reads final status via `sbx-exec status`, records the `execs` row, enforces per-sandbox concurrency, and starts a host-side hard deadline (timeout + 10 s → destroy sandbox with `exec_deadline`). `cmd` vs `shell` validation. UTF-8 sanitising of output.
 - **Acceptance:** unit tests with fake driver for caps, timeouts, concurrency, deadline; integration test runs `python3 -c`/`sh -c` style commands with expected exit codes.
 - **Verify:** `go test ./internal/orchestrator/... && make test-integration`
+
+> Done: Added supervised sync exec with strict argv/shell/path validation, real exit metadata, combined capped capture that keeps draining, UTF-8 sanitization, per-sandbox concurrency, independent host/cancellation deadlines and fail-closed destruction on uncertain cleanup. Every accepted exec records timing/counts without output content. HTTP auth/ownership and fake-driver tests, two guard mutations, 36094 fuzz executions, Windows/Linux make check, full integration/escape suites, runsc argv/shell/timeout/cancellation with peer health, static build and serve checks passed. Fixed procfs ESRCH disappearance handling without weakening cleanup proof; the runsc kill attack passed ten repetitions.
 
 ### [ ] T1.11 Streaming exec (WebSocket)
 - **Deps:** T1.10 · **PRD:** FR-EX-7, §10.4
@@ -408,7 +410,12 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-01 — Add an append-only sandbox transition table, committed atomically with state changes — preserves timestamps/reasons for intermediate lifecycle stages required by FR-LC-3; quota reservation occurs in the creating-row transaction — T1.9, PRD §11
 
+- 2026-11-01 — Bound cancellation proof to 10 seconds and retain valid completed-run proof when kill/status consumption races — prevents orphaned long-lived execs while preserving confirmed cleanup; uncertain status/transport destroys the sandbox — T1.10, PRD §9.4
+
+- 2026-11-01 — Account separately for the canonical helper argv prefix while retaining the raw driver cap — supports the existing OpenAPI limit of 256 user arguments without removing any bound; env/label entry limits align with the contract limit of 100 — T1.10
+
 ## Open questions
+
 
 Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
 

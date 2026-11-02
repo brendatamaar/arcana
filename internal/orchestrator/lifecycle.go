@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brendatamaar/arcana/internal/auth"
@@ -28,10 +29,25 @@ var (
 	ErrNotRunning = errors.New("sandbox not running")
 	ErrQuota      = errors.New("sandbox quota exceeded")
 	ErrRuntime    = errors.New("runtime unavailable")
+	ErrExecLimit  = errors.New("exec concurrency limit reached")
+	ErrPath       = errors.New("invalid sandbox path")
 )
 
 // Clock supplies timestamps to the orchestration shell.
-type Clock interface{ Now() time.Time }
+type Clock interface {
+	Now() time.Time
+	NewTimer(time.Duration) Timer
+}
+
+// Timer is owned and stopped by the operation that creates it.
+type Timer interface {
+	Chan() <-chan time.Time
+	Stop()
+}
+type systemTimer struct{ timer *time.Timer }
+
+func (t systemTimer) Chan() <-chan time.Time { return t.timer.C }
+func (t systemTimer) Stop()                  { t.timer.Stop() }
 
 // SystemClock uses UTC wall time.
 type SystemClock struct{}
@@ -39,13 +55,18 @@ type SystemClock struct{}
 // Now returns UTC wall time.
 func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
+// NewTimer schedules a monotonic production deadline.
+func (SystemClock) NewTimer(d time.Duration) Timer { return systemTimer{time.NewTimer(d)} }
+
 // Service owns persistence and runtime effects; reservations are atomic in SQLite.
 type Service struct {
-	store      *store.Store
-	driver     runtime.Driver
-	cfg        config.Config
-	clock      Clock
-	createGate chan struct{}
+	store       *store.Store
+	driver      runtime.Driver
+	cfg         config.Config
+	clock       Clock
+	createGate  chan struct{}
+	execMu      sync.Mutex
+	activeExecs map[string]int
 }
 
 // New constructs an orchestrator with independent operator configuration.
@@ -55,7 +76,7 @@ func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock 
 		cfg.Templates[i].Env = maps.Clone(cfg.Templates[i].Env)
 	}
 	cfg.Limits.Files.AllowedRoots = slices.Clone(cfg.Limits.Files.AllowedRoots)
-	return &Service{store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1)}
+	return &Service{store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int)}
 }
 
 // Create reserves quota before starting the instance and persists every outcome.

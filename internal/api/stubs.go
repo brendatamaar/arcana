@@ -6,9 +6,6 @@ import (
 	"github.com/brendatamaar/arcana/internal/api/gen"
 )
 
-// Exec is implemented by its later Phase 1 task.
-func (s *Server) Exec(w http.ResponseWriter, r *http.Request, _ string) { s.notImplemented(w, r) }
-
 // ExecStream is implemented by its later Phase 1 task.
 func (s *Server) ExecStream(w http.ResponseWriter, r *http.Request, _ string) {
 	s.notImplemented(w, r)

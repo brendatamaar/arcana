@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fix runsc controller-disappearance races while retaining required process cleanup proof.
+
+- Add supervised sync exec with real exit codes, combined output caps, UTF-8 sanitization, concurrency limits and host-side cleanup deadlines.
+
 - Add sandbox lifecycle endpoints with template/resource overrides, atomic quotas, ownership filtering, keepalive and persisted transition history.
 
 - Add the production exec helper with detached-process cleanup, bounded atomic status and checksum-verified embedded static binaries.

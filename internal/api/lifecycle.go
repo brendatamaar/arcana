@@ -27,6 +27,10 @@ func (s *Server) sandboxFailure(w http.ResponseWriter, r *http.Request, err erro
 		e = apierr.NewQuotaExceeded("sandbox quota exceeded")
 	case errors.Is(err, orchestrator.ErrRuntime):
 		e = apierr.NewRuntimeUnavailable("runtime operation failed")
+	case errors.Is(err, orchestrator.ErrExecLimit):
+		e = apierr.NewExecLimitReached("exec concurrency limit reached")
+	case errors.Is(err, orchestrator.ErrPath):
+		e = apierr.NewInvalidPath("path outside allowed roots")
 	}
 	s.failure(w, r, e)
 }

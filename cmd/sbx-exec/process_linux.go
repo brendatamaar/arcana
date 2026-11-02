@@ -14,6 +14,11 @@ import (
 
 const maxProcesses = 8192
 
+// procfs may return ESRCH from an already-open stat file as its process exits.
+func processGone(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
 type processInfo struct {
 	PID        int
 	Parent     int
@@ -82,7 +87,7 @@ func snapshot(root *os.Root) (map[int]processInfo, error) {
 			continue
 		}
 		info, err := readProcess(root, pid)
-		if errors.Is(err, os.ErrNotExist) {
+		if processGone(err) {
 			continue
 		}
 		if err != nil {
@@ -152,7 +157,7 @@ func signalIdentity(root *os.Root, expected processInfo, signal syscall.Signal) 
 	}
 	defer func() { _ = syscall.Close(int(descriptor)) }()
 	current, err := readProcess(root, expected.PID)
-	if errors.Is(err, os.ErrNotExist) {
+	if processGone(err) {
 		return nil
 	}
 	if err != nil {

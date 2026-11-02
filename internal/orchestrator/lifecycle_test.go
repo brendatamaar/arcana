@@ -19,6 +19,9 @@ import (
 type testClock struct{ at time.Time }
 
 func (c *testClock) Now() time.Time { return c.at }
+func (*testClock) NewTimer(time.Duration) Timer {
+	panic("lifecycle test unexpectedly scheduled a timer")
+}
 
 func fixture(t *testing.T) (*Service, *fake.Driver, auth.Principal, auth.Principal, *testClock) {
 	t.Helper()

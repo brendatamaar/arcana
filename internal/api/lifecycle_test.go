@@ -14,11 +14,12 @@ import (
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
+	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/runtime/fake"
 	"github.com/brendatamaar/arcana/internal/store"
 )
 
-func lifecycleFixture(t *testing.T) (http.Handler, string, string, string) {
+func lifecycleFixture(t *testing.T, drivers ...runtime.Driver) (http.Handler, string, string, string) {
 	t.Helper()
 	database, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "api.db"))
 	if err != nil {
@@ -39,7 +40,11 @@ func lifecycleFixture(t *testing.T) (http.Handler, string, string, string) {
 	}
 	cfg := config.Default()
 	cfg.Limits.MaxSandboxesPerKey = 2
-	service := orchestrator.New(database, fake.New(), cfg, orchestrator.SystemClock{})
+	var driver runtime.Driver = fake.New()
+	if len(drivers) > 0 {
+		driver = drivers[0]
+	}
+	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
 	return New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.Limits.Files, service), secrets[0], secrets[1], secrets[2]
 }
 
