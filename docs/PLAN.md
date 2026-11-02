@@ -204,11 +204,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added client-backed sandbox create/list/get/rm, streaming argv exec, files put/get/ls, tables/JSON, server/key environment flags, opt-in stdin and Linux TTY raw-mode restoration. Context cancellation joins stream/input readers; named downloads use exclusive 0600 creation. In-process CLI tests, child-process exit-7 assertion and Linux pseudoterminal restoration test passed. Actual daemon/runsc integration verifies CLI exit 7 and binary put/get. Windows/Linux make check, full runsc integration/escape suites and static Linux build passed.
 
-### [ ] T1.16 Doctor
+### [x] T1.16 Doctor
 - **Deps:** T1.7, T1.3 · **PRD:** FR-DR-1…3
 - **Do:** `internal/doctor` with independent checks returning pass/warn/fail plus a fix hint (including gVisor install steps); `arcana doctor [--json]`; `serve` runs blocking checks at startup and refuses to start on failure.
 - **Acceptance:** unit tests with injectable system probes for each check; manual run documented in the PR.
 - **Verify:** `go test ./internal/doctor/... && go run ./cmd/arcana doctor`
+
+> Done: Added independent injectable doctor probes, table/JSON diagnostics and fix hints, Linux/kernel/cgroups/Docker/storage/data/SQLite/image/KVM checks, hardened runsc/helper proof with bounded cleanup, explicit runc warning/proof policy, and pre-listener startup gating after reconciliation. Unit tests cover each failure class, runtime registration, missing images, cancellation and output caps; actual daemon tests prove doctor failure and serve refusal on missing prerequisites. Windows/Linux make check, full runsc integration/escape suites and static build passed. Manual VPS doctor JSON exited successfully with only optional KVM warning; details in docs/doctor-validation.md. Doctor unit coverage 75.1%.
 
 ### [ ] T1.17 Escape suite v1 and CI with runsc
 - **Deps:** T1.12, T1.13 · **PRD:** §12.4 (v0.1 rows), NFR-SEC-2
@@ -435,6 +437,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Public Go client uses generated wire-model aliases, finite configurable response/transfer limits, no redirects or automatic mutation retries, and context-owned WebSocket readers/control methods — preserves API compatibility and bounded memory; real-HTTP client tests also found that file-body EOF must suppress a cancellation deadline so a successful upload can finish its response — T1.14, PRD FR-SD-1.
 
 - 2026-11-02 — CLI exec requires explicit argv separation and uses context-owned stream readers; stdin is opt-in except for TTY, and JSON exec emits terminal metadata after draining output — prevents leaked stdin readers and mixed JSON/binary output. Linux TTY uses stdlib ioctl/raw-mode handling without a new dependency; named downloads use exclusive 0600 creation — T1.15, PRD FR-CL-1/2.
+
+- 2026-11-02 — Doctor probes the selected runtime with a hardened tmpfs container and helper completion proof, after startup reconciliation and before listener admission — avoids orphan-related resource starvation and checks required subreaper/pidfd facilities. Missing individual images warn without automatic pulls; at least one installed template is needed for runtime proof. Explicit runc opt-in preserves advisory runsc checks and mandatory runc proof — T1.16, FR-DR-1…3.
 
 ## Open questions
 

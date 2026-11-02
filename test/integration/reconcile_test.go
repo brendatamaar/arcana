@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/doctor"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/store"
 )
@@ -267,5 +268,25 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	}
 	if err = <-exited; err != nil {
 		t.Fatal("graceful restart shutdown", err)
+	}
+	badConfig := config + "templates:\n  - name: base\n    image: arcana-doctor-missing:" + orphanID + "\n"
+	if err = os.WriteFile(configFile, []byte(badConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probeCtx, stopProbe := context.WithTimeout(ctx, 15*time.Second)
+	defer stopProbe()
+	command = exec.CommandContext(probeCtx, binary, "doctor", "--config", configFile, "--json")
+	diagnostic, doctorErr := command.Output()
+	var report doctor.Report
+	if doctorErr == nil || probeCtx.Err() != nil || json.Unmarshal(diagnostic, &report) != nil || !report.Failed() {
+		t.Fatal("doctor did not report missing runtime prerequisites", doctorErr)
+	}
+	command = exec.CommandContext(probeCtx, binary, "serve", "--config", configFile)
+	if err = command.Run(); err == nil || probeCtx.Err() != nil {
+		t.Fatal("serve did not refuse failed prerequisites", err)
+	}
+	if resp, err := client.Get(base + "/v1/health"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("listener admitted requests after failed prerequisites")
 	}
 }

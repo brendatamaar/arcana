@@ -189,6 +189,8 @@ Client commands accept `--server`/`--api-key` (or `ARCANA_URL`/`ARCANA_API_KEY`)
 - **FR-DR-2 [v0.1]** Exit code is non-zero if any check that blocks `serve` fails. `--json` prints machine-readable output.
 - **FR-DR-3 [v0.1]** `serve` refuses to start if the configured OCI runtime is `runc` unless `runtime.docker.allow_insecure_runtime: true`, and logs a prominent warning when it is.
 
+Doctor runs independent checks with a 90-second diagnostic budget and a 30-second per-probe deadline; runtime probe cleanup has a separate 10-second bound. It creates the data directory if needed, verifies private temporary-file writes, and opens/applies embedded database migrations. Template checks inspect local images without pulling; missing images warn, but runtime proof requires at least one installed configured template. Runtime probes create a hardened, network-none tmpfs sandbox under the installation ID, verify sbx-exec cleanup, and remove the probe on success or failure. With explicit runc opt-in, runsc availability is advisory and runc proof remains mandatory; kernel >= 5.3 blocks runc startup, while runsc helper proof determines compatibility for runsc. KVM is informational. Serve performs these checks after reconciliation and before listener admission.
+
 ### 7.11 Audit (AD)
 
 - **FR-AD-1 [v0.2]** Audit events: key created or revoked, sandbox created or destroyed (with reason), exec started (argv or shell string, cwd), file written or deleted (path, size), archive uploaded, snapshot created, egress decision.

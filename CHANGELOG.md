@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add doctor diagnostics with JSON/fix hints and startup gating, including actual hardened runtime/helper cleanup proof.
+
 - Add remote sandbox, exec and files CLI commands with tables/JSON, environment credentials, TTY/stdin and real remote exit codes.
 
 - Add the public Go client with typed v0.1 methods, bounded file transfers, API errors and context-owned streaming exec.

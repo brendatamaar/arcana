@@ -60,6 +60,18 @@ func newServeCommand() *cobra.Command {
 		if err = lifecycle.Reconcile(ctx); err != nil {
 			return fmt.Errorf("startup reconciliation: %w", err)
 		}
+		report := startupDoctor(ctx, cfg)
+		for _, check := range report.Checks {
+			switch check.Status {
+			case "fail":
+				logger.ErrorContext(ctx, "startup prerequisite failed", "check", check.Name, "detail", check.Detail, "hint", check.Hint)
+			case "warn":
+				logger.WarnContext(ctx, "startup prerequisite warning", "check", check.Name, "detail", check.Detail, "hint", check.Hint)
+			}
+		}
+		if err = requireHealthy(report); err != nil {
+			return err
+		}
 		maintenanceCtx, cancelMaintenance := context.WithCancel(ctx)
 		maintenanceDone := make(chan struct{})
 		go func() { defer close(maintenanceDone); lifecycle.Maintain(maintenanceCtx, logger) }()
