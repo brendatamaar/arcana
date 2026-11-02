@@ -60,3 +60,12 @@ UPDATE execs SET ended_at = ?,exit_code = ?,timed_out = ?,cancelled = ?,truncate
 
 -- name: ListExecs :many
 SELECT * FROM execs WHERE sandbox_id = ? AND id > ? ORDER BY id LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
+
+-- name: ListActiveSandboxes :many
+SELECT * FROM sandboxes WHERE id > ? AND state IN ('creating','running','destroying') ORDER BY id LIMIT 1000;
+
+-- name: HasUnfinishedExec :one
+SELECT EXISTS(SELECT 1 FROM execs WHERE sandbox_id = ? AND ended_at IS NULL);
+
+-- name: FailUnfinishedExecs :exec
+UPDATE execs SET ended_at = ?, cancelled = 1 WHERE sandbox_id = ? AND ended_at IS NULL;

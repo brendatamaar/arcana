@@ -370,7 +370,7 @@ func (d *Driver) List(ctx context.Context) ([]runtime.Instance, error) {
 		if !validSandboxID(sandboxID) || item.Labels["arcana.managed"] != "true" || item.Labels["arcana.instance"] != d.config.InstallID {
 			continue
 		}
-		instances = append(instances, runtime.Instance{ID: sandboxName(sandboxID), SandboxID: sandboxID, Labels: maps.Clone(item.Labels)})
+		instances = append(instances, runtime.Instance{ID: sandboxName(sandboxID), SandboxID: sandboxID, Labels: maps.Clone(item.Labels), Stopped: string(item.State) != "running"})
 	}
 	return instances, nil
 }

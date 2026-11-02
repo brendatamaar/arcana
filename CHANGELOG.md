@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add TTL/idle reaping, supervised volume watchdog, startup crash reconciliation and optional sandbox destruction on shutdown.
+
 - Add binary-safe files API with atomic bounded writes, reads, directory listings, deletion and sandbox-only archive transfer.
 
 - Add WebSocket exec with binary-safe output, interactive stdin and TTY resize, bounded queues, keepalives and cancellation on disconnect.

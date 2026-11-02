@@ -192,6 +192,20 @@ func (q *Queries) CreateSandbox(ctx context.Context, arg CreateSandboxParams) (S
 	return i, err
 }
 
+const failUnfinishedExecs = `-- name: FailUnfinishedExecs :exec
+UPDATE execs SET ended_at = ?, cancelled = 1 WHERE sandbox_id = ? AND ended_at IS NULL
+`
+
+type FailUnfinishedExecsParams struct {
+	EndedAt   sql.NullTime
+	SandboxID string
+}
+
+func (q *Queries) FailUnfinishedExecs(ctx context.Context, arg FailUnfinishedExecsParams) error {
+	_, err := q.db.ExecContext(ctx, failUnfinishedExecs, arg.EndedAt, arg.SandboxID)
+	return err
+}
+
 const finishExec = `-- name: FinishExec :execrows
 UPDATE execs SET ended_at = ?,exit_code = ?,timed_out = ?,cancelled = ?,truncated = ?,stdout_bytes = ?,stderr_bytes = ? WHERE id = ? AND ended_at IS NULL
 `
@@ -333,6 +347,67 @@ func (q *Queries) GetSandbox(ctx context.Context, id string) (Sandbox, error) {
 		&i.EndReason,
 	)
 	return i, err
+}
+
+const hasUnfinishedExec = `-- name: HasUnfinishedExec :one
+SELECT EXISTS(SELECT 1 FROM execs WHERE sandbox_id = ? AND ended_at IS NULL)
+`
+
+func (q *Queries) HasUnfinishedExec(ctx context.Context, sandboxID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasUnfinishedExec, sandboxID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listActiveSandboxes = `-- name: ListActiveSandboxes :many
+SELECT id, owner_key_id, template, runtime, state, container_id, source, cpus, memory_mb, disk_mb, pids, network_mode, network_allow, env_keys, labels, from_snapshot_id, created_at, expires_at, idle_timeout_seconds, last_activity_at, ended_at, end_reason FROM sandboxes WHERE id > ? AND state IN ('creating','running','destroying') ORDER BY id LIMIT 1000
+`
+
+func (q *Queries) ListActiveSandboxes(ctx context.Context, id string) ([]Sandbox, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSandboxes, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sandbox{}
+	for rows.Next() {
+		var i Sandbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKeyID,
+			&i.Template,
+			&i.Runtime,
+			&i.State,
+			&i.ContainerID,
+			&i.Source,
+			&i.Cpus,
+			&i.MemoryMb,
+			&i.DiskMb,
+			&i.Pids,
+			&i.NetworkMode,
+			&i.NetworkAllow,
+			&i.EnvKeys,
+			&i.Labels,
+			&i.FromSnapshotID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.IdleTimeoutSeconds,
+			&i.LastActivityAt,
+			&i.EndedAt,
+			&i.EndReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listExecs = `-- name: ListExecs :many

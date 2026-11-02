@@ -25,13 +25,14 @@ type ExecRequest struct {
 	Stdin          []byte
 }
 type execPlan struct {
-	argv    []string
-	cwd     string
-	env     map[string]string
-	timeout int64
-	command string
-	shell   bool
-	stdin   []byte
+	maintenance bool
+	argv        []string
+	cwd         string
+	env         map[string]string
+	timeout     int64
+	command     string
+	shell       bool
+	stdin       []byte
 }
 
 func resolveExec(cfg config.Config, request ExecRequest) (execPlan, error) {

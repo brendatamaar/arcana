@@ -180,11 +180,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added shared lexical path validation, sandbox-local argv-only file utilities, atomic bounded writes, descriptor-sized binary reads, bounded listings, deletion and opaque tar upload/download through supervised exec. Auth/ownership, encoded traversal, binary/limit and malformed metadata tests passed; containment mutation failed as expected and 255703 fuzz inputs passed. Windows/Linux make check, full runsc integration/escape suites, static build and serve probe passed. Coverage: path validator 100%, API 88.4%, orchestrator 83.7%.
 
-### [ ] T1.13 Reaper, watchdog and reconciliation
+### [x] T1.13 Reaper, watchdog and reconciliation
 - **Deps:** T1.9, T1.10 · **PRD:** FR-LC-5, FR-LC-7, FR-LC-8, FR-RL-3, NFR-REL-1
 - **Do:** Background loops with context cancellation: reaper (TTL, idle), workspace watchdog (`du` via exec for `volume` backend at the configured interval → destroy with `disk_quota`), startup reconciliation by labels (containers, volumes; networks once they exist), marking lost sandboxes `failed/lost`. Use an injectable clock for tests.
 - **Acceptance:** unit tests with fake clock and fake driver; integration test: kill Arcana mid-exec, restart, orphans removed (ESC-20).
 - **Verify:** `go test ./internal/orchestrator/... && make test-integration`
+
+> Done: Added independent context-owned TTL/idle reaper and supervised bounded volume watchdog without idle activity updates, pre-listener reconciliation with installation-scoped orphan cleanup, interrupted-exec fail-closed recovery, and optional destroy_on_shutdown. Fake-clock/driver boundary, quota, recovery and cleanup-failure tests passed. Actual runsc daemon SIGKILL/restart test (integration and escape) verifies lost cleanup, orphan volume/network removal, NULL unknown exit codes, peer/API/host health and graceful shutdown. Windows/Linux make check, full Linux integration/escape targets and static build passed.
 
 ### [ ] T1.14 Go client
 - **Deps:** T1.11, T1.12 · **PRD:** FR-SD-1
@@ -423,6 +425,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Reuse supervised exec for interactive streams, with bounded transport queues/deadlines and 1000 connection admission slots — preserves cleanup proof, quotas and records while preventing pending-start/slow-reader growth; streaming output is forwarded without retaining a sync capture buffer — T1.11, PRD §10.4
 
 - 2026-11-02 — Reuse supervised exec for bounded argv-only file utilities and opaque tar streams — shares cleanup/quota/deadline enforcement while preserving the host filesystem boundary; atomic writes, descriptor-sized reads and bounded listings prevent partial replacements and unbounded output — T1.12, PRD FR-FS-1…5, ADR 0003
+
+- 2026-11-02 — Reconcile before listener admission, preserve healthy instances, and fail closed on unfinished exec records after daemon crashes — lost supervision cannot prove process cleanup; close records only after resource removal and leave unknown exit codes NULL. Run independent joined reaper/watchdog loops; watchdog uses supervised bounded du without idle activity updates — T1.13, PRD FR-LC-8 and NFR-REL-1.
 
 ## Open questions
 

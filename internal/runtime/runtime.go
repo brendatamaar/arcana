@@ -49,6 +49,7 @@ type Instance struct {
 	ID        string
 	SandboxID string
 	Labels    map[string]string
+	Stopped   bool
 }
 
 // ExecRequest contains an explicit argv invocation; shells are resolved by the orchestrator.

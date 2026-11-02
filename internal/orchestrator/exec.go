@@ -63,7 +63,7 @@ func (s *Service) execute(ctx context.Context, p auth.Principal, id string, requ
 }
 
 func (s *Service) executePlan(ctx context.Context, p auth.Principal, id string, plan execPlan, stream *StreamOptions, files *fileIO) (ExecResult, error) {
-	row, err := s.Activity(ctx, p, id)
+	row, err := s.execActivity(ctx, p, id, plan.maintenance)
 	if err != nil {
 		return ExecResult{}, err
 	}
@@ -182,15 +182,15 @@ func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sa
 				}
 				outcome.status = nil
 				outcome.err = errors.Join(fmt.Errorf("%w: %s", ErrRuntime, effect.reason), outcome.err, cancelErr, destroyErr)
-				return s.finishExec(ctx, row, id, started, output, outcome, effect.reason == "exec_deadline")
+				return s.finishExec(ctx, row, id, started, output, outcome, effect.reason == "exec_deadline", plan.maintenance)
 			case persistExec:
-				return s.finishExec(ctx, row, id, started, output, outcome, false)
+				return s.finishExec(ctx, row, id, started, output, outcome, false, plan.maintenance)
 			}
 		}
 	}
 }
 
-func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, started time.Time, output *capture, outcome jobResult, deadline bool) (ExecResult, error) {
+func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, started time.Time, output *capture, outcome jobResult, deadline, maintenance bool) (ExecResult, error) {
 	stdout, stderr, outBytes, errBytes, truncated := output.result()
 	ended := s.clock.Now()
 	result := ExecResult{ID: id, ExitCode: -1, Stdout: stdout, Stderr: stderr, DurationMS: max(0, ended.Sub(started).Milliseconds()), Truncated: truncated, TimedOut: deadline, Cancelled: ctx.Err() != nil}
@@ -206,7 +206,10 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 	if activity.After(row.ExpiresAt) {
 		activity = row.ExpiresAt
 	}
-	_, activityErr := s.store.Queries.TouchSandbox(recordCtx, db.TouchSandboxParams{ID: row.ID, LastActivityAt: activity})
+	var activityErr error
+	if !maintenance {
+		_, activityErr = s.store.Queries.TouchSandbox(recordCtx, db.TouchSandboxParams{ID: row.ID, LastActivityAt: activity})
+	}
 	if failure := errors.Join(outcome.err, err, activityErr, output.sinkErr); failure != nil {
 		return result, errors.Join(failure, ctx.Err())
 	}

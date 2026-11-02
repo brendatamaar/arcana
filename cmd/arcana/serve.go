@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -55,6 +57,13 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
 		}
 		lifecycle := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
+		if err = lifecycle.Reconcile(ctx); err != nil {
+			return fmt.Errorf("startup reconciliation: %w", err)
+		}
+		maintenanceCtx, cancelMaintenance := context.WithCancel(ctx)
+		maintenanceDone := make(chan struct{})
+		go func() { defer close(maintenanceDone); lifecycle.Maintain(maintenanceCtx, logger) }()
+		defer func() { cancelMaintenance(); <-maintenanceDone }()
 		keys := auth.New(database, auth.SystemClock{})
 		if err = keys.Bootstrap(ctx, cfg.DataDir, cmd.OutOrStdout()); err != nil {
 			return err
@@ -73,6 +82,11 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "API listener is not loopback; use a TLS-terminating reverse proxy")
 		}
 		logger.InfoContext(ctx, "API listening", "address", listener.Addr().String())
-		return api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
+		serveErr := api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
+		cancelMaintenance()
+		<-maintenanceDone
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second)
+		defer cancelShutdown()
+		return errors.Join(serveErr, lifecycle.Shutdown(shutdownCtx))
 	}}
 }
