@@ -19,3 +19,41 @@ jobs:
       - run: make check
       - run: CGO_ENABLED=0 make build
       - run: ./bin/arcana version
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ARCANA_REQUIRE_RUNSC: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install gVisor from the official apt repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          sudo "$(command -v runsc)" install
+          sudo systemctl restart docker
+          docker info
+      - name: Run integration and escape suites with runsc
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! make test-integration test-escape 2>&1 | tee security-tests.log; then
+            grep -E -A8 -B2 -- '^--- FAIL:|^FAIL|panic:|fatal error:|Error [0-9]|:[0-9]+:[0-9]+:' security-tests.log | head -80 | while IFS= read -r line; do
+              line="${line//'%'/'%25'}"
+              line="${line//$'\r'/'%0D'}"
+              echo "::error title=Security test failure::$line"
+            done
+            exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --build-tags=escape ./test/escape/...

@@ -1,6 +1,6 @@
 //go:build linux && (integration || escape)
 
-package integration
+package escape
 
 import (
 	"bytes"
@@ -27,17 +27,13 @@ import (
 func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	runtimes := docker(t, ctx, "info", "--format", "{{json .Runtimes}}")
+	requireRunsc(ctx, t)
 	oci := "runsc"
-	if !strings.Contains(runtimes, `"runsc"`) {
-		oci = "runc"
-		t.Log("runsc unavailable: runc does not prove isolation")
-	}
 	t.Log("restart runtime:", oci)
-	docker(t, ctx, "build", "-t", "arcana-base:local", "../../templates/base")
+	docker(ctx, t, "build", "-t", "arcana-base:local", "../../templates/base")
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "arcana")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/arcana")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/arcana") // #nosec G204 -- fixed compiler/argv; output is a test-owned temporary path.
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build daemon: %v: %s", err, output)
@@ -74,9 +70,9 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	}
 	start := func() (*exec.Cmd, <-chan error) {
 		t.Helper()
-		cmd := exec.CommandContext(ctx, binary, "serve", "--config", configFile)
+		cmd := exec.CommandContext(ctx, binary, "serve", "--config", configFile) // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 		// A private log file avoids retaining output or exposing bootstrap credentials.
-		log, err := os.OpenFile(filepath.Join(dir, "daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		log, err := os.OpenFile(filepath.Join(dir, "daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- private file in this test-owned temporary directory.
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +101,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 		return cmd, done
 	}
 	daemon, exited := start()
-	secret, err := os.ReadFile(filepath.Join(dir, "admin.key"))
+	secret, err := os.ReadFile(filepath.Join(dir, "admin.key")) // #nosec G304 -- read credentials only from this test daemon's private data directory.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +117,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 		if err != nil {
 			t.Fatal(err)
@@ -147,11 +143,11 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 		t.Cleanup(func() {
 			cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
 			defer stop()
-			if exec.CommandContext(cleanup, "docker", "inspect", "sbx-"+id).Run() == nil {
-				docker(t, cleanup, "rm", "-f", "sbx-"+id)
+			if exec.CommandContext(cleanup, "docker", "inspect", "sbx-"+id).Run() == nil { // #nosec G204 -- API ID is one argv with a fixed sbx- prefix, never a shell string.
+				docker(cleanup, t, "rm", "-f", "sbx-"+id)
 			}
-			if exec.CommandContext(cleanup, "docker", "volume", "inspect", "sbx-"+id+"-ws").Run() == nil {
-				docker(t, cleanup, "volume", "rm", "sbx-"+id+"-ws")
+			if exec.CommandContext(cleanup, "docker", "volume", "inspect", "sbx-"+id+"-ws").Run() == nil { // #nosec G204 -- API ID is one argv with fixed resource-name prefixes and suffixes.
+				docker(cleanup, t, "volume", "rm", "sbx-"+id+"-ws")
 			}
 		})
 		return id
@@ -172,7 +168,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 		}
 	}()
 	poll(func() bool {
-		return exec.CommandContext(ctx, "docker", "exec", "sbx-"+interrupted, "test", "-f", "/workspace/started").Run() == nil
+		return exec.CommandContext(ctx, "docker", "exec", "sbx-"+interrupted, "test", "-f", "/workspace/started").Run() == nil // #nosec G204 -- sandbox ID is one fixed-prefix argv, not shell text.
 	})
 	if err = daemon.Process.Kill(); err != nil {
 		t.Fatal(err)
@@ -193,29 +189,29 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	}
 	volume, network := "sbx-"+orphanID+"-ws", "sbx-"+orphanID+"-net"
 	labels := []string{"--label=arcana.managed=true", "--label=arcana.instance=" + installID, "--label=arcana.sandbox_id=" + orphanID}
-	docker(t, ctx, append([]string{"volume", "create"}, append(labels, volume)...)...)
-	docker(t, ctx, append([]string{"network", "create", "--internal"}, append(labels, network)...)...)
+	docker(ctx, t, append([]string{"volume", "create"}, append(labels, volume)...)...)
+	docker(ctx, t, append([]string{"network", "create", "--internal"}, append(labels, network)...)...)
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
 		defer stop()
-		_ = exec.CommandContext(cleanup, "docker", "volume", "rm", volume).Run()
-		_ = exec.CommandContext(cleanup, "docker", "network", "rm", network).Run()
+		_ = exec.CommandContext(cleanup, "docker", "volume", "rm", volume).Run()   // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
+		_ = exec.CommandContext(cleanup, "docker", "network", "rm", network).Run() // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	})
 	daemon, exited = start()
-	if exec.CommandContext(ctx, "docker", "volume", "inspect", volume).Run() == nil {
+	if exec.CommandContext(ctx, "docker", "volume", "inspect", volume).Run() == nil { // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 		t.Fatal("unreferenced managed volume survived")
 	}
-	if exec.CommandContext(ctx, "docker", "network", "inspect", network).Run() == nil {
+	if exec.CommandContext(ctx, "docker", "network", "inspect", network).Run() == nil { // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 		t.Fatal("unreferenced managed network survived")
 	}
 	lost := request("GET", "/v1/sandboxes/"+interrupted, "")
 	if lost["state"] != "failed" || lost["end_reason"] != "lost" {
 		t.Fatal("interrupted sandbox preserved", lost["state"], lost["end_reason"])
 	}
-	if exec.CommandContext(ctx, "docker", "inspect", "sbx-"+interrupted).Run() == nil {
+	if exec.CommandContext(ctx, "docker", "inspect", "sbx-"+interrupted).Run() == nil { // #nosec G204 -- sandbox ID is one fixed-prefix argv, not shell text.
 		t.Fatal("orphan container survived")
 	}
-	if exec.CommandContext(ctx, "docker", "volume", "inspect", "sbx-"+interrupted+"-ws").Run() == nil {
+	if exec.CommandContext(ctx, "docker", "volume", "inspect", "sbx-"+interrupted+"-ws").Run() == nil { // #nosec G204 -- sandbox ID remains within one canonical resource-name argv.
 		t.Fatal("orphan volume survived")
 	}
 	peer := request("POST", "/v1/sandboxes/"+healthy+"/exec", `{"cmd":["/bin/echo","healthy"]}`)
@@ -225,7 +221,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	// Exercise the public CLI against the live daemon, including OS exit status
 	// and successful binary HTTP uploads through the normal streaming client.
 	cliArgs := []string{"--server", base, "--api-key", strings.TrimSpace(string(secret))}
-	command := exec.CommandContext(ctx, binary, append(cliArgs, "exec", healthy, "--", "/bin/sh", "-c", "printf cli; exit 7")...)
+	command := exec.CommandContext(ctx, binary, append(cliArgs, "exec", healthy, "--", "/bin/sh", "-c", "printf cli; exit 7")...) // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	var cliOut bytes.Buffer
 	command.Stdout = &cliOut
 	cliErr := command.Run()
@@ -237,11 +233,11 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	if err = os.WriteFile(localFile, []byte{0, 255, 'x'}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "put", healthy, localFile, "/workspace/cli.bin")...)
+	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "put", healthy, localFile, "/workspace/cli.bin")...) // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	if err = command.Run(); err != nil {
 		t.Fatal("live CLI upload", err)
 	}
-	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "get", healthy, "/workspace/cli.bin")...)
+	command = exec.CommandContext(ctx, binary, append(cliArgs, "files", "get", healthy, "/workspace/cli.bin")...) // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	cliBytes, err := command.Output()
 	if err != nil || !bytes.Equal(cliBytes, []byte{0, 255, 'x'}) {
 		t.Fatal("live CLI binary download", err, cliBytes)
@@ -262,7 +258,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	if err = database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	docker(t, ctx, "info", "--format", "{{.ServerVersion}}")
+	docker(ctx, t, "info", "--format", "{{.ServerVersion}}")
 	if err = daemon.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -275,13 +271,13 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	}
 	probeCtx, stopProbe := context.WithTimeout(ctx, 15*time.Second)
 	defer stopProbe()
-	command = exec.CommandContext(probeCtx, binary, "doctor", "--config", configFile, "--json")
+	command = exec.CommandContext(probeCtx, binary, "doctor", "--config", configFile, "--json") // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	diagnostic, doctorErr := command.Output()
 	var report doctor.Report
 	if doctorErr == nil || probeCtx.Err() != nil || json.Unmarshal(diagnostic, &report) != nil || !report.Failed() {
 		t.Fatal("doctor did not report missing runtime prerequisites", doctorErr)
 	}
-	command = exec.CommandContext(probeCtx, binary, "serve", "--config", configFile)
+	command = exec.CommandContext(probeCtx, binary, "serve", "--config", configFile) // #nosec G204 -- fixed test binary or Docker CLI; argv is scoped to this test's private files and managed resources.
 	if err = command.Run(); err == nil || probeCtx.Err() != nil {
 		t.Fatal("serve did not refuse failed prerequisites", err)
 	}

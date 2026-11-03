@@ -653,6 +653,8 @@ Located in `test/escape`, run with `make test-escape` and in CI. Each test asser
 | ESC-23 | Cross-origin request to `/v1/events` and an exec output stream carrying a session cookie | Rejected | v0.3 |
 | ESC-24 | Exec output containing `<script>`, HTML and ANSI escape tricks shown in the log viewer | Rendered as inert text (frontend test) | v0.3 |
 
+The v0.1 escape suite drives attacks through public REST/WebSocket endpoints under runsc and verifies Arcana, a peer sandbox and Docker host health after every attack. Its test-only image contains a root-owned setuid probe, but all sandbox execution retains UID 1000 and production hardening. PID containment is proven by the test container's read-only cgroup `pids.events` counter without OOM kills, rather than by errno alone (runsc may report ENOMEM on PID denial). CPU peer latency is measured only after the spin probe signals it has started. Standalone security runs explicitly skip when runsc is unavailable; CI sets `ARCANA_REQUIRE_RUNSC=1` and fails instead. These kernel-counter reads never open workspace/volume files on the host.
+
 ### 12.5 Known limitations (documented honestly)
 
 - Docker socket access makes Arcana root-equivalent on the host.

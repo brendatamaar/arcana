@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add public-API escape suite v1 and CI with required runsc, resource-denial evidence and peer/host health checks.
+
 - Add doctor diagnostics with JSON/fix hints and startup gating, including actual hardened runtime/helper cleanup proof.
 
 - Add remote sandbox, exec and files CLI commands with tables/JSON, environment credentials, TTY/stdin and real remote exit codes.

@@ -212,11 +212,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added independent injectable doctor probes, table/JSON diagnostics and fix hints, Linux/kernel/cgroups/Docker/storage/data/SQLite/image/KVM checks, hardened runsc/helper proof with bounded cleanup, explicit runc warning/proof policy, and pre-listener startup gating after reconciliation. Unit tests cover each failure class, runtime registration, missing images, cancellation and output caps; actual daemon tests prove doctor failure and serve refusal on missing prerequisites. Windows/Linux make check, full runsc integration/escape suites and static build passed. Manual VPS doctor JSON exited successfully with only optional KVM warning; details in docs/doctor-validation.md. Doctor unit coverage 75.1%.
 
-### [ ] T1.17 Escape suite v1 and CI with runsc
+### [x] T1.17 Escape suite v1 and CI with runsc
 - **Deps:** T1.12, T1.13 · **PRD:** §12.4 (v0.1 rows), NFR-SEC-2
 - **Do:** `test/escape` (build tag `escape`) implementing ESC-01…14, ESC-20, ESC-21 through the public API. CI job installs gVisor from its apt repository, runs `sudo runsc install`, restarts Docker, then runs `make test-integration test-escape` against runsc.
 - **Acceptance:** all v0.1 escape tests pass in CI on runsc; each test asserts host/Arcana health after the attack.
 - **Verify:** `make test-escape` locally with runsc; CI green.
+
+> Done: Added public REST/WebSocket ESC-01–14 and ESC-21 with bounded adversarial probes, setuid fixture validation, synchronized CPU/peer timing, PID cgroup-denial evidence without OOM, binary/symlink/path containment, and peer/API/Docker health checks after every attack. Moved actual SIGKILL/restart ESC-20 into test/escape. CI installs the official apt runsc package, registers/restarts Docker, requires runsc, runs integration/escape, and lints security-tagged tests. Fixed cold-cache Docker fixture ID parsing by separating stdout from pull-progress stderr, without changing security assertions. Windows/Linux make check, full runsc integration/escape, tagged lint and static build passed. GitHub check/security jobs passed candidate 36708f9 (https://github.com/brendatamaar/arcana/actions/runs/41578117012); final documentation-only amendment is rechecked in CI. Details: docs/escape-v1.md.
 
 ### [ ] T1.18 v0.1 docs and release
 - **Deps:** T1.15–T1.17
@@ -439,6 +441,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — CLI exec requires explicit argv separation and uses context-owned stream readers; stdin is opt-in except for TTY, and JSON exec emits terminal metadata after draining output — prevents leaked stdin readers and mixed JSON/binary output. Linux TTY uses stdlib ioctl/raw-mode handling without a new dependency; named downloads use exclusive 0600 creation — T1.15, PRD FR-CL-1/2.
 
 - 2026-11-02 — Doctor probes the selected runtime with a hardened tmpfs container and helper completion proof, after startup reconciliation and before listener admission — avoids orphan-related resource starvation and checks required subreaper/pidfd facilities. Missing individual images warn without automatic pulls; at least one installed template is needed for runtime proof. Explicit runc opt-in preserves advisory runsc checks and mandatory runc proof — T1.16, FR-DR-1…3.
+
+- 2026-11-03 — Escape suite uses public API attacks, test-only setuid fixtures and container-scoped kernel counters — observed runsc returning ENOMEM when PID cgroup denials increment, so ESC-01 requires PID-counter evidence with no OOM kills and either helper completion or fail-closed destruction. CPU latency waits for an active-spin marker; volume assertions wait for terminal disk_quota cleanup. CI requires runsc and fails on missing registration — T1.17, PRD §12.4.
 
 ## Open questions
 

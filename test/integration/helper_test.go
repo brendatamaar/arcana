@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -15,9 +16,12 @@ import (
 
 func docker(t *testing.T, ctx context.Context, args ...string) string {
 	t.Helper()
-	output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	command := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- trusted test harness argv, never interpreted by a shell.
+	var diagnostic bytes.Buffer
+	command.Stderr = &diagnostic
+	output, err := command.Output()
 	if err != nil {
-		t.Fatalf("docker %v: %v: %s", args, err, output)
+		t.Fatalf("docker %v: %v: %s", args, err, diagnostic.String())
 	}
 	return strings.TrimSpace(string(output))
 }
