@@ -41,6 +41,18 @@ jobs:
           sudo "$(command -v runsc)" install
           sudo systemctl restart docker
           docker info
+      - name: Follow README quickstart on the fresh Ubuntu VM
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! python3 scripts/check_quickstart.py 2>&1 | tee quickstart.log; then
+            tail -50 quickstart.log | while IFS= read -r line; do
+              line="${line//'%'/'%25'}"
+              line="${line//$'\r'/'%0D'}"
+              echo "::error title=README quickstart failure::$line"
+            done
+            exit 1
+          fi
       - name: Run integration and escape suites with runsc
         shell: bash
         run: |

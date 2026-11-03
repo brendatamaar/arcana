@@ -220,11 +220,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added public REST/WebSocket ESC-01–14 and ESC-21 with bounded adversarial probes, setuid fixture validation, synchronized CPU/peer timing, PID cgroup-denial evidence without OOM, binary/symlink/path containment, and peer/API/Docker health checks after every attack. Moved actual SIGKILL/restart ESC-20 into test/escape. CI installs the official apt runsc package, registers/restarts Docker, requires runsc, runs integration/escape, and lints security-tagged tests. Fixed cold-cache Docker fixture ID parsing by separating stdout from pull-progress stderr, without changing security assertions. Windows/Linux make check, full runsc integration/escape, tagged lint and static build passed. GitHub check/security jobs passed candidate 36708f9 (https://github.com/brendatamaar/arcana/actions/runs/41578117012); final documentation-only amendment is rechecked in CI. Details: docs/escape-v1.md.
 
-### [ ] T1.18 v0.1 docs and release
+### [x] T1.18 v0.1 docs and release
 - **Deps:** T1.15–T1.17
 - **Do:** README: what it is, security model summary, quickstart (`go install`, gVisor setup, `doctor`, `serve`, first exec), CLI examples, limitations (PRD §12.5). `CHANGELOG.md` entry. Tag `v0.1.0`.
 - **Acceptance:** following the README on a clean Ubuntu VM reaches a first exec.
 - **Verify:** `make check test-integration test-escape`
+
+> Done: Replaced the scaffold README with v0.1 security scope, Ubuntu/gVisor setup, go install, Doctor/serve/first-exec flow, CLI/API examples and honest limitations; consolidated CHANGELOG into the dated v0.1.0 release. Added verbatim marked-README execution with isolated private demo state and bounded cleanup. VPS smoke reached first exec and file round trip; fresh Ubuntu 24.04 GitHub VM quickstart and check/security jobs passed candidate f8c400f (https://github.com/brendatamaar/arcana/actions/runs/41587693910). Windows/Linux make check, full runsc integration/escape and static build passed. The final release commit is the target of annotated tag v0.1.0 after final CI verification; published-module installation is checked after tag push. Validation: docs/release-validation.md. Phase 1 ends here; no blocked tasks or unresolved Phase 1 questions remain.
 
 ---
 
@@ -443,6 +445,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-02 — Doctor probes the selected runtime with a hardened tmpfs container and helper completion proof, after startup reconciliation and before listener admission — avoids orphan-related resource starvation and checks required subreaper/pidfd facilities. Missing individual images warn without automatic pulls; at least one installed template is needed for runtime proof. Explicit runc opt-in preserves advisory runsc checks and mandatory runc proof — T1.16, FR-DR-1…3.
 
 - 2026-11-03 — Escape suite uses public API attacks, test-only setuid fixtures and container-scoped kernel counters — observed runsc returning ENOMEM when PID cgroup denials increment, so ESC-01 requires PID-counter evidence with no OOM kills and either helper completion or fail-closed destruction. CPU latency waits for an active-spin marker; volume assertions wait for terminal disk_quota cleanup. CI requires runsc and fails on missing registration — T1.17, PRD §12.4.
+
+- 2026-11-03 — Validate the marked README quickstart blocks verbatim on a fresh Ubuntu 24.04 GitHub-hosted VM with Go/Docker prerequisites, plus the authorized VPS — avoids documentation drift while exercising go install, runsc Doctor, daemon startup, first exec, file round trip and cleanup with new private state. The demo explicitly opts into destroy_on_shutdown; production defaults remain unchanged — T1.18, README, scripts/check_quickstart.py.
 
 ## Open questions
 
