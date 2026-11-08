@@ -35,3 +35,7 @@ check: verify-generated lint test
 clean:
 	go clean ./...
 	go run ./scripts/clean.go
+
+.PHONY: templates
+templates:
+	@for name in base python node go; do docker build -t arcana-$$name:local templates/$$name || exit $$?; done

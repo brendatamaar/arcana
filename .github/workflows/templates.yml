@@ -1,0 +1,51 @@
+name: Template images
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install runsc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gnupg
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          sudo "$(command -v runsc)" install
+          sudo systemctl restart docker
+      - run: make templates
+      - run: go test -race -tags=integration ./test/integration -run TestTemplates_OfflineWorkspace -v
+  publish:
+    needs: smoke
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      matrix:
+        template: [base, python, node, go]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: templates/${{ matrix.template }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/brendatamaar/arcana-${{ matrix.template }}:${{ github.ref_name }}

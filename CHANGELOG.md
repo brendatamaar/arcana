@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add base, Python, Node and Go workspace-ready templates, offline runsc smoke tests and multi-architecture GHCR release builds.
+
 ## [0.1.0] - 2026-11-03
 
 ### Added

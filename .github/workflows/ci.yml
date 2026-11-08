@@ -53,6 +53,7 @@ jobs:
             done
             exit 1
           fi
+      - run: make templates
       - name: Run integration and escape suites with runsc
         shell: bash
         run: |

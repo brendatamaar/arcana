@@ -232,11 +232,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Phase 2 — v0.2 Self-hosting ready
 
-### [ ] T2.1 Official templates
+### [x] T2.1 Official templates
 - **Deps:** T1.18 · **PRD:** FR-TP-2, FR-TP-4, FR-RL-4
 - **Do:** `templates/{base,python,node,go}/Dockerfile`: slim bases, UID 1000 user `sandbox`, `tar`, `du`, `find`, `coreutils`, `git`, `ca-certificates`; env so package managers install into `/workspace` (venv at `/workspace/.venv` created lazily by a profile script or documented usage, `npm_config_cache=/workspace/.npm`, `GOPATH=/workspace/.go`, `GOCACHE=/workspace/.cache/go`). CI workflow builds multi-arch images and pushes to GHCR on tags; smoke test each image under runsc.
 - **Acceptance:** each template runs `python -m pip install requests` / `npm i lodash` / `go mod download` successfully into `/workspace` with allowlist networking (after T2.4) or offline smoke tests before it.
 - **Verify:** `make templates && make test-integration`
+
+> Done: Added slim base/Python/Node/Go images with UID/GID 1000 and workspace package-manager paths, documented lazy Python venv setup, make templates, offline hardened runsc integration smokes, and multi-arch GHCR release builds gated on smoke tests. make templates, make check, make test-integration and make test-escape passed locally.
 
 ### [ ] T2.2 Template registry endpoint
 - **Deps:** T2.1 · **PRD:** FR-TP-3
@@ -461,3 +463,5 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-01 — Resolved by owner approval: defer web-check until T3.7; retain all Go, generation and security checks. Original question: May the AGENTS workflow require make web-check for OpenAPI changes only from T3.7, when the dashboard/target exist? T1.5 cannot satisfy the current unconditional check: make web-check fails because no target exists. All Go, generation and security checks would remain required. Owner approved 2026-11-01; T1.5 resumed.
 
 - 2026-11-01 — Resolved by owner approval: add the Apache-2.0 companion runtime and continue. Original question: Approve github.com/oapi-codegen/runtime v1.8.0, the companion dependency imported by the approved oapi-codegen std-http-server generator? It is absent from the approved list; cannot compile or verify T1.5 without it. Owner approved 2026-11-01; T1.5 resumed.
+
+- 2026-11-08 — Resolved: owner supplied Git author brendatamaar <brendatama10@gmail.com>; configured repository-local identity and resumed T2.1 commit.
