@@ -19,3 +19,14 @@ stay under /workspace. Go: create/upload a module in /workspace, then
 
 Package downloads require allowlist networking (T2.4). Until then, integration
 smokes use offline pip/venv, a local npm package, and a dependency-free Go module.
+
+Set a template's `warm_pool` to a nonnegative target; combined targets cannot
+exceed `limits.max_sandboxes`. The filler creates one member at a time and
+backs off on failures. Active sandboxes take precedence over pool capacity.
+Acquisition consumes a fresh instance once; it is never returned to the pool.
+TTL starts when acquired. Matching environment, resources, workdir and network
+settings can use the pool; differing settings or user labels use a cold start
+because Docker creation settings cannot be changed safely after start.
+Pool members carry `arcana.pool` labels and are reconciled after a restart.
+Default shutdown preserves them for restart cleanup; `destroy_on_shutdown`
+also drains the pool.

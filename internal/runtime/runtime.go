@@ -34,6 +34,7 @@ type Resources struct {
 
 // Spec describes an instance; runtime hardening is always applied by the driver.
 type Spec struct {
+	PoolTemplate     string
 	SandboxID        string
 	Image            string
 	Resources        Resources

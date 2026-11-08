@@ -247,11 +247,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added authenticated GET /v1/templates, generated contract and Go client, resolved defaults with environment key names only, independent registry metadata and a tested 1000-template cap. Existing startup Doctor already warns for missing configured images. Task verification and make check passed.
 
-### [ ] T2.3 Warm pool
+### [x] T2.3 Warm pool
 - **Deps:** T2.2 · **PRD:** FR-LC-10
 - **Do:** Per (template, network mode) pool with target size; background filler with backoff on errors; acquire applies labels and records `source: pool`; pool members labelled and reconciled; pool drained on shutdown when `destroy_on_shutdown`; metrics hooks.
 - **Acceptance:** unit tests for filler/acquire races (`-race`); integration test shows faster acquire than cold create.
 - **Verify:** `go test -race ./internal/orchestrator/... && make test-integration`
+
+> Done: Added bounded fresh-instance pools for configured template/network defaults, serialized filler with capped backoff, immutable-setting cold fallback, quota-safe idle-member eviction, source=pool reservations, runtime pool labels, restart orphan reconciliation, shutdown drain and PoolAvailable metrics hook. Race tests cover acquire/fill, capacity, fallback and cleanup. runsc integration measured 54ms acquire versus 2.09s cold; make check, required race tests, full integration and escape suites passed.
 
 ### [ ] T2.4 Allowlist networking and egress proxy
 - **Deps:** T0.5, T2.2 · **PRD:** FR-NW-2…7, FR-CL-3

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add bounded per-template warm pools, compatible acquisition, cold fallback, backoff and shutdown cleanup.
+
 - Add an authenticated template registry endpoint and Go client method with resolved defaults and environment key names.
 
 - Add base, Python, Node and Go workspace-ready templates, offline runsc smoke tests and multi-architecture GHCR release builds.

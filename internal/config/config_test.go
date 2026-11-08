@@ -94,7 +94,7 @@ func TestValidate(t *testing.T) {
 		{"templates", "templates", func(c *Config) { c.Templates = nil }},
 		{"image", "templates.0.image", func(c *Config) { c.Templates[0].Image = "" }},
 		{"name", "templates.0.name", func(c *Config) { c.Templates[0].Name = "" }},
-		{"pool", "templates.0.warm_pool", func(c *Config) { c.Templates[0].WarmPool = 1 }},
+		{"pool", "templates.0.warm_pool", func(c *Config) { c.Templates[0].WarmPool = c.Limits.MaxSandboxes + 1 }},
 		{"template resources", "templates.0.resources.cpus", func(c *Config) { c.Templates[0].Resources.CPUs = -1 }},
 		{"template ttl", "templates.0.ttl_seconds", func(c *Config) { c.Templates[0].TTLSeconds = -1 }},
 		{"template workdir", "templates.0.workdir", func(c *Config) { c.Templates[0].Workdir = "relative" }},

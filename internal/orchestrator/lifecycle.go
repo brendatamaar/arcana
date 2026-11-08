@@ -60,6 +60,9 @@ func (SystemClock) NewTimer(d time.Duration) Timer { return systemTimer{time.New
 
 // Service owns persistence and runtime effects; reservations are atomic in SQLite.
 type Service struct {
+	poolMu      sync.Mutex
+	poolFillMu  sync.Mutex
+	pool        map[string][]runtime.Instance
 	store       *store.Store
 	driver      runtime.Driver
 	cfg         config.Config
@@ -76,7 +79,7 @@ func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock 
 		cfg.Templates[i].Env = maps.Clone(cfg.Templates[i].Env)
 	}
 	cfg.Limits.Files.AllowedRoots = slices.Clone(cfg.Limits.Files.AllowedRoots)
-	return &Service{store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int)}
+	return &Service{store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int), pool: make(map[string][]runtime.Instance)}
 }
 
 // Create reserves quota before starting the instance and persists every outcome.
@@ -89,12 +92,44 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, request 
 	if err != nil {
 		return db.Sandbox{}, fmt.Errorf("generating sandbox ID: %w", err)
 	}
+	select {
+	case s.createGate <- struct{}{}:
+	case <-ctx.Done():
+		return db.Sandbox{}, ctx.Err()
+	}
+	pooled, available := s.acquirePool(plan)
+	if available {
+		id = pooled.SandboxID
+	}
 	plan.spec.SandboxID = id
+	plan.source = "cold"
+	if available {
+		plan.source = "pool"
+	}
+	if !available {
+		if err := s.makePoolRoom(ctx); err != nil {
+			<-s.createGate
+			return db.Sandbox{}, err
+		}
+	}
 	row, err := s.reserve(ctx, principal, id, plan)
+	<-s.createGate
 	if err != nil {
+		if available {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			cleanupErr := s.driver.Destroy(cleanupCtx, pooled.ID)
+			cancel()
+			err = errors.Join(err, cleanupErr)
+		}
 		return db.Sandbox{}, err
 	}
-	instance, createErr := s.driver.Create(ctx, plan.spec)
+	var instance runtime.Instance
+	var createErr error
+	if available {
+		instance = pooled
+	} else {
+		instance, createErr = s.driver.Create(ctx, plan.spec)
+	}
 	// Cancellation must not discard an already-created instance or leave a stale reservation.
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -111,13 +146,6 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, request 
 }
 
 func (s *Service) reserve(ctx context.Context, p auth.Principal, id string, plan resolved) (db.Sandbox, error) {
-	// The cancellable gate avoids same-process deferred transaction lock upgrades.
-	select {
-	case s.createGate <- struct{}{}:
-		defer func() { <-s.createGate }()
-	case <-ctx.Done():
-		return db.Sandbox{}, ctx.Err()
-	}
 	tx, err := s.store.SQL.BeginTx(ctx, nil)
 	if err != nil {
 		return db.Sandbox{}, err
@@ -148,7 +176,7 @@ func (s *Service) reserve(ctx context.Context, p auth.Principal, id string, plan
 	}
 	labelData, _ := json.Marshal(labels)
 	r := plan.spec.Resources
-	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: "cold", Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now})
+	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: plan.source, Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now})
 	if err != nil {
 		return db.Sandbox{}, fmt.Errorf("reserving sandbox: %w", err)
 	}

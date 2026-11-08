@@ -206,6 +206,9 @@ func (d *Driver) labels(spec runtime.Spec) map[string]string {
 	labels["arcana.managed"] = "true"
 	labels["arcana.instance"] = d.config.InstallID
 	labels["arcana.sandbox_id"] = spec.SandboxID
+	if spec.PoolTemplate != "" {
+		labels["arcana.pool"] = spec.PoolTemplate
+	}
 	return labels
 }
 

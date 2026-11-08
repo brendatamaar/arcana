@@ -31,6 +31,7 @@ type resolved struct {
 	spec      runtime.Spec
 	ttl, idle int64
 	template  string
+	source    string
 }
 
 func resolve(cfg config.Config, request CreateRequest) (resolved, error) {

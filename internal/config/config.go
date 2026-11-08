@@ -258,6 +258,7 @@ func (c Config) Validate() error {
 	if len(c.Templates) == 0 {
 		bad("templates", "must not be empty")
 	}
+	poolTarget := 0
 	names := map[string]bool{}
 	for i, t := range c.Templates {
 		field := fmt.Sprintf("templates.%d", i)
@@ -268,8 +269,9 @@ func (c Config) Validate() error {
 		if t.Image == "" {
 			bad(field+".image", "must not be empty")
 		}
-		if t.WarmPool != 0 {
-			bad(field+".warm_pool", "only zero is supported in v0.1")
+		poolTarget += t.WarmPool
+		if t.WarmPool < 0 || t.WarmPool > c.Limits.MaxSandboxes {
+			bad(field+".warm_pool", "must be within 0..limits.max_sandboxes")
 		}
 		if t.TTLSeconds < 0 || t.TTLSeconds > c.Limits.MaxTTLSeconds {
 			bad(field+".ttl_seconds", "must be zero or within limits.max_ttl_seconds")
@@ -278,6 +280,9 @@ func (c Config) Validate() error {
 		if t.Workdir != "" && !path.IsAbs(t.Workdir) {
 			bad(field+".workdir", "must be absolute")
 		}
+	}
+	if poolTarget > c.Limits.MaxSandboxes {
+		bad("templates", "combined warm_pool must not exceed limits.max_sandboxes")
 	}
 	if c.Log.Level != "debug" && c.Log.Level != "info" && c.Log.Level != "warn" && c.Log.Level != "error" {
 		bad("log.level", "must be debug, info, warn or error")

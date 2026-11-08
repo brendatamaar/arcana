@@ -175,6 +175,8 @@ func (s *Service) Watch(ctx context.Context) error {
 
 // Maintain owns independent reaper and watchdog loops and joins both on cancellation.
 func (s *Service) Maintain(ctx context.Context, logger *slog.Logger) {
+	poolDone := make(chan struct{})
+	go func() { defer close(poolDone); s.maintainPool(ctx, logger) }()
 	watchDone := make(chan struct{})
 	go func() {
 		defer close(watchDone)
@@ -182,6 +184,7 @@ func (s *Service) Maintain(ctx context.Context, logger *slog.Logger) {
 	}()
 	s.maintenanceLoop(ctx, time.Second, s.Reap, logger, "reaper failed")
 	<-watchDone
+	<-poolDone
 }
 
 func (s *Service) maintenanceLoop(ctx context.Context, interval time.Duration, action func(context.Context) error, logger *slog.Logger, message string) {
@@ -205,5 +208,5 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	if !s.cfg.Server.DestroyOnShutdown {
 		return nil
 	}
-	return s.eachActive(ctx, func(row db.Sandbox) error { return s.Destroy(ctx, auth.Principal{Admin: true}, row.ID, "shutdown") })
+	return errors.Join(s.drainPool(ctx), s.eachActive(ctx, func(row db.Sandbox) error { return s.Destroy(ctx, auth.Principal{Admin: true}, row.ID, "shutdown") }))
 }
