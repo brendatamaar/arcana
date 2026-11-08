@@ -7,6 +7,43 @@ components:
             $ref: '#/components/schemas/Error'
       description: API error
   schemas:
+    Template:
+      type: object
+      additionalProperties: false
+      required: [name, image, resources, ttl_seconds, idle_timeout_seconds, workdir, network_mode, warm_pool, env_keys]
+      properties:
+        name:
+          type: string
+        image:
+          type: string
+        resources:
+          $ref: '#/components/schemas/Resources'
+        ttl_seconds:
+          type: integer
+          format: int64
+        idle_timeout_seconds:
+          type: integer
+          format: int64
+        workdir:
+          type: string
+        network_mode:
+          type: string
+        warm_pool:
+          type: integer
+        env_keys:
+          type: array
+          items:
+            type: string
+    TemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Template'
     CreateKey:
       additionalProperties: false
       properties:
@@ -376,6 +413,19 @@ info:
   version: 0.1.0
 openapi: 3.0.3
 paths:
+  /v1/templates:
+    get:
+      operationId: listTemplates
+      summary: List configured templates and resolved defaults (environment keys only)
+      responses:
+        '200':
+          description: Configured templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+        '401':
+          $ref: '#/components/responses/Error'
   /v1/health:
     get:
       operationId: health

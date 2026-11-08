@@ -334,6 +334,24 @@ type SandboxList struct {
 // SandboxState defines model for SandboxState.
 type SandboxState string
 
+// Template defines model for Template.
+type Template struct {
+	EnvKeys            []string  `json:"env_keys"`
+	IdleTimeoutSeconds int64     `json:"idle_timeout_seconds"`
+	Image              string    `json:"image"`
+	Name               string    `json:"name"`
+	NetworkMode        string    `json:"network_mode"`
+	Resources          Resources `json:"resources"`
+	TtlSeconds         int64     `json:"ttl_seconds"`
+	WarmPool           int       `json:"warm_pool"`
+	Workdir            string    `json:"workdir"`
+}
+
+// TemplateList defines model for TemplateList.
+type TemplateList struct {
+	Items []Template `json:"items"`
+}
+
 // ListKeysParams defines parameters for ListKeys.
 type ListKeysParams struct {
 	Limit  *int64  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -608,6 +626,9 @@ type ServerInterface interface {
 
 	// (POST /v1/sandboxes/{id}/keepalive)
 	KeepaliveSandbox(w http.ResponseWriter, r *http.Request, id string)
+	// ListTemplates List configured templates and resolved defaults (environment keys only)
+	// (GET /v1/templates)
+	ListTemplates(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1213,6 +1234,20 @@ func (siw *ServerInterfaceWrapper) KeepaliveSandbox(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListTemplates operation middleware
+func (siw *ServerInterfaceWrapper) ListTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1333,6 +1368,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/templates", wrapper.ListTemplates)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/health", wrapper.Health)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/keys", wrapper.CreateKey)

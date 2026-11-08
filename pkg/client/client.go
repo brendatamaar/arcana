@@ -398,3 +398,16 @@ func (c *Client) ListFiles(ctx context.Context, id, path string, depth int64) (F
 	}
 	return out, err
 }
+
+// Template describes configured sandbox defaults without environment values.
+type Template = gen.Template
+
+// TemplateList contains the configured template registry.
+type TemplateList = gen.TemplateList
+
+// ListTemplates returns the installation-wide template registry.
+func (c *Client) ListTemplates(ctx context.Context) (TemplateList, error) {
+	var out TemplateList
+	err := c.json(ctx, "GET", "/templates", nil, nil, &out)
+	return out, err
+}

@@ -334,3 +334,14 @@ func ExampleClient_CreateSandbox() {
 	defer func() { _ = c.DestroySandbox(ctx, sandbox.Id) }()
 	_, _ = c.Exec(ctx, sandbox.Id, client.ExecRequest{Cmd: []string{"python3", "--version"}})
 }
+
+func TestListTemplates_ConfiguredDefaults(t *testing.T) {
+	c, _, _ := fixture(t)
+	list, err := c.ListTemplates(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].Name != "base" || list.Items[0].Workdir != "/workspace" {
+		t.Fatalf("%+v", list)
+	}
+}

@@ -252,6 +252,9 @@ func (c Config) Validate() error {
 	} else if prefix != prefix.Masked() || c.Network.SubnetPrefix < prefix.Bits() || c.Network.SubnetPrefix > prefix.Addr().BitLen() {
 		bad("network.subnet_prefix", "must fit the canonical subnet pool")
 	}
+	if len(c.Templates) > 1000 {
+		bad("templates", "must contain at most 1000 entries")
+	}
 	if len(c.Templates) == 0 {
 		bad("templates", "must not be empty")
 	}

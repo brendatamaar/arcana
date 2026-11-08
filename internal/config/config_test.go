@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -123,5 +124,20 @@ func TestLoad_RejectsTimeoutBeyondHelperCeiling(t *testing.T) {
 	t.Setenv("ARCANA_LIMITS__EXEC__MAX_TIMEOUT_SECONDS", "3601")
 	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "limits.exec.max_timeout_seconds") {
 		t.Fatalf("unsupported helper timeout accepted: %v", err)
+	}
+}
+
+func TestTemplates_CountBound(t *testing.T) {
+	cfg := Default()
+	cfg.Templates = make([]Template, 1001)
+	for i := range cfg.Templates {
+		cfg.Templates[i] = Template{Name: fmt.Sprintf("template-%d", i), Image: "test:local"}
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "at most 1000") {
+		t.Fatalf("missing registry cap: %v", err)
+	}
+	cfg.Templates = cfg.Templates[:1000]
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

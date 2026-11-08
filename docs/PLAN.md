@@ -240,10 +240,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added slim base/Python/Node/Go images with UID/GID 1000 and workspace package-manager paths, documented lazy Python venv setup, make templates, offline hardened runsc integration smokes, and multi-arch GHCR release builds gated on smoke tests. make templates, make check, make test-integration and make test-escape passed locally.
 
-### [ ] T2.2 Template registry endpoint
+### [x] T2.2 Template registry endpoint
 - **Deps:** T2.1 · **PRD:** FR-TP-3
 - **Do:** Config-driven registry, `GET /v1/templates`, validation that template images exist at startup (warn, not fail).
 - **Verify:** `go test ./internal/orchestrator/... ./internal/api/...`
+
+> Done: Added authenticated GET /v1/templates, generated contract and Go client, resolved defaults with environment key names only, independent registry metadata and a tested 1000-template cap. Existing startup Doctor already warns for missing configured images. Task verification and make check passed.
 
 ### [ ] T2.3 Warm pool
 - **Deps:** T2.2 · **PRD:** FR-LC-10
