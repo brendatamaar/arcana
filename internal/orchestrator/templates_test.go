@@ -24,3 +24,20 @@ func TestTemplates_ResolvedDefaultsAndIndependentMetadata(t *testing.T) {
 		t.Fatal("invalid template accepted")
 	}
 }
+
+func TestNetworkPolicy_PresetsLimitsAndNoneGuard(t *testing.T) {
+	s, _, _, _, _ := fixture(t)
+	plan, err := resolve(s.cfg, CreateRequest{Template: "base", NetworkMode: "allowlist", NetworkPresets: []string{"python"}, NetworkAllow: []string{"EXAMPLE.COM", "pypi.org"}})
+	if err != nil || len(plan.spec.NetworkAllow) != 3 {
+		t.Fatalf("%+v %v", plan, err)
+	}
+	for _, request := range []CreateRequest{
+		{Template: "base", NetworkMode: "none", NetworkAllow: []string{"example.com"}},
+		{Template: "base", NetworkMode: "allowlist", NetworkPresets: []string{"unknown"}},
+		{Template: "base", NetworkMode: "allowlist", NetworkAllow: []string{"127.0.0.1"}},
+	} {
+		if _, err := resolve(s.cfg, request); err == nil {
+			t.Fatal("invalid policy accepted")
+		}
+	}
+}

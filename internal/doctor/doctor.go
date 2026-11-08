@@ -51,6 +51,7 @@ func Run(ctx context.Context, cfg config.Config, probe Probe) Report {
 		{"docker", "Install Docker Engine >= 24 and grant access to the configured Docker socket.", true},
 		{"data_dir", "Create data_dir with private permissions and grant the Arcana user write access.", true},
 		{"database", "Check data_dir permissions and back up/repair the SQLite database; migrations must complete.", true},
+		{"subnets", "Choose network.subnet_pool outside existing host routes and Docker networks.", true},
 		{"kvm", "Optional: enable virtualization and expose /dev/kvm for future Firecracker support.", false},
 		{"runsc", "Install gVisor from its apt repository, run sudo runsc install, then restart Docker. Build at least one configured template image first.", cfg.Runtime.Docker.OCIRuntime == "runsc"},
 	}

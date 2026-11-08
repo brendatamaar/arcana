@@ -9,6 +9,8 @@ import (
 	"io"
 	"maps"
 	"math"
+	"net"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -45,11 +48,14 @@ type Config struct {
 	AllowInsecureRuntime bool
 	InstallID            string
 	HelperPath           string
+	Network              *NetworkConfig
 	Clock                Clock
 }
 
 // Driver owns the Docker client and serializes create operations to avoid volume-name races.
 type Driver struct {
+	networkMu   sync.Mutex
+	networks    map[string]*networkState
 	client      *client.Client
 	config      Config
 	createGate  chan struct{}
@@ -93,7 +99,7 @@ func New(config Config) (*Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating Docker client: %w", err)
 	}
-	return &Driver{client: engine, config: config, sessions: make(map[uint64]activeSession), createGate: make(chan struct{}, 1)}, nil
+	return &Driver{networks: make(map[string]*networkState), client: engine, config: config, sessions: make(map[uint64]activeSession), createGate: make(chan struct{}, 1)}, nil
 }
 
 // Close releases client resources after all sessions have ended.
@@ -145,7 +151,7 @@ func validateSpec(spec runtime.Spec) error {
 	if spec.WorkspaceBackend != "" && spec.WorkspaceBackend != "volume" && spec.WorkspaceBackend != "tmpfs" {
 		return runtime.Invalid{Field: "workspace_backend"}
 	}
-	if spec.NetworkMode != "" && spec.NetworkMode != "none" {
+	if spec.NetworkMode != "" && spec.NetworkMode != "none" && spec.NetworkMode != "allowlist" {
 		return runtime.Invalid{Field: "network_mode"}
 	}
 	r := spec.Resources
@@ -287,7 +293,34 @@ func (d *Driver) Create(ctx context.Context, spec runtime.Spec) (instance runtim
 		}
 		volumeCreated = true
 	}
-	created, err := d.client.ContainerCreate(ctx, d.createOptions(spec))
+	options := d.createOptions(spec)
+	if spec.NetworkMode == "allowlist" {
+		state, err := d.createNetwork(ctx, spec)
+		if err != nil {
+			return runtime.Instance{}, err
+		}
+		defer func() {
+			if !containerCreated {
+				cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+				defer cancel()
+				resultErr = errors.Join(resultErr, d.removeNetwork(cleanup, spec.SandboxID))
+			}
+		}()
+		options.Config.NetworkDisabled = false
+		options.HostConfig.NetworkMode = container.NetworkMode(sandboxName(spec.SandboxID) + "-net")
+		options.NetworkingConfig = &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{sandboxName(spec.SandboxID) + "-net": {IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr(address(state.subnet, 2))}}}}
+		proxyURL := "http://" + net.JoinHostPort(address(state.subnet, 3), "3128")
+		filtered := options.Config.Env[:0]
+		for _, entry := range options.Config.Env {
+			name, _, _ := strings.Cut(entry, "=")
+			if strings.ToLower(name) != "http_proxy" && strings.ToLower(name) != "https_proxy" && strings.ToLower(name) != "no_proxy" {
+				filtered = append(filtered, entry)
+			}
+		}
+		options.Config.Env = filtered
+		options.Config.Env = append(options.Config.Env, "HTTP_PROXY="+proxyURL, "HTTPS_PROXY="+proxyURL, "NO_PROXY=", "http_proxy="+proxyURL, "https_proxy="+proxyURL, "no_proxy=")
+	}
+	created, err := d.client.ContainerCreate(ctx, options)
 	if err != nil {
 		return runtime.Instance{}, fmt.Errorf("creating sandbox container: %w", err)
 	}
@@ -341,6 +374,11 @@ func (d *Driver) Destroy(ctx context.Context, id string) error {
 		}
 	}
 	d.cancelSessions(id)
+	if d.config.Network != nil {
+		if err := d.removeNetwork(ctx, sandboxID); err != nil {
+			return err
+		}
+	}
 	workspace := id + "-ws"
 	volume, err := d.client.VolumeInspect(ctx, workspace, client.VolumeInspectOptions{})
 	if errdefs.IsNotFound(err) {
@@ -369,6 +407,9 @@ func (d *Driver) List(ctx context.Context) ([]runtime.Instance, error) {
 	}
 	instances := make([]runtime.Instance, 0, len(result.Items))
 	for _, item := range result.Items {
+		if item.Labels["arcana.proxy"] == "true" {
+			continue
+		}
 		sandboxID := item.Labels["arcana.sandbox_id"]
 		if !validSandboxID(sandboxID) || item.Labels["arcana.managed"] != "true" || item.Labels["arcana.instance"] != d.config.InstallID {
 			continue

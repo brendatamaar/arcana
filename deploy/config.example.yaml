@@ -49,21 +49,33 @@ workspace:
 
 network:                          # allowlist mode is v0.2
   default_mode: none              # none | allowlist
-#   subnet_pool: 10.200.0.0/16
-#   subnet_prefix: 28
-#   max_allow_entries: 50
-#   proxy_image: ghcr.io/brendatamaar/arcana:latest
-#   proxy_dns: [1.1.1.1, 1.0.0.1]   # outbound proxy only; operator configurable
-#   presets:
-#     python: [pypi.org, files.pythonhosted.org]
-#     node: [registry.npmjs.org]
-#     go: [proxy.golang.org, sum.golang.org, storage.googleapis.com]
+  subnet_pool: 10.200.0.0/16
+  subnet_prefix: 28
+  max_allow_entries: 50
+  proxy_image: ghcr.io/brendatamaar/arcana:latest
+  proxy_dns: [1.1.1.1, 1.0.0.1]   # outbound proxy only; operator configurable
+  presets:
+    python: [pypi.org, files.pythonhosted.org]
+    node: [registry.npmjs.org]
+    go: [proxy.golang.org, sum.golang.org, storage.googleapis.com]
 
 templates:
   - name: base
     image: arcana-base:local
     warm_pool: 0
-  # v0.2 adds python, node, go with presets and warm_pool sizes
+  # Add the official ecosystem templates after make templates:
+  # - name: python
+  #   image: arcana-python:local
+  #   network_preset: python
+  #   warm_pool: 0
+  # - name: node
+  #   image: arcana-node:local
+  #   network_preset: node
+  #   warm_pool: 0
+  # - name: go
+  #   image: arcana-go:local
+  #   network_preset: go
+  #   warm_pool: 0
 
 # snapshots:                        # v0.3
 #   max_per_key: 20

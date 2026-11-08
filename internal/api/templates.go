@@ -20,7 +20,7 @@ func (s *Server) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	items := make([]gen.Template, 0, len(templates))
 	for _, t := range templates {
 		cpu, memory, disk, pids := float32(t.Resources.CPUs), t.Resources.MemoryMB, t.Resources.DiskMB, t.Resources.PIDs
-		items = append(items, gen.Template{Name: t.Name, Image: t.Image, Resources: gen.Resources{Cpus: &cpu, MemoryMb: &memory, DiskMb: &disk, Pids: &pids}, TtlSeconds: t.TTLSeconds, IdleTimeoutSeconds: t.IdleTimeoutSeconds, Workdir: t.Workdir, NetworkMode: t.NetworkMode, WarmPool: t.WarmPool, EnvKeys: t.EnvKeys})
+		items = append(items, gen.Template{NetworkPreset: &t.NetworkPreset, Name: t.Name, Image: t.Image, Resources: gen.Resources{Cpus: &cpu, MemoryMb: &memory, DiskMb: &disk, Pids: &pids}, TtlSeconds: t.TTLSeconds, IdleTimeoutSeconds: t.IdleTimeoutSeconds, Workdir: t.Workdir, NetworkMode: t.NetworkMode, WarmPool: t.WarmPool, EnvKeys: t.EnvKeys})
 	}
 	s.respond(w, r, http.StatusOK, gen.TemplateList{Items: items})
 }

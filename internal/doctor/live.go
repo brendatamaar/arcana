@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -20,6 +21,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
 	"github.com/brendatamaar/arcana/internal/ids"
+	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
 	"github.com/brendatamaar/arcana/internal/store"
@@ -34,6 +36,8 @@ func boundedFile(name string, limit int64) (string, error) {
 	switch name {
 	case "/proc/sys/kernel/osrelease":
 		file, err = os.Open("/proc/sys/kernel/osrelease")
+	case "/proc/net/route":
+		file, err = os.Open("/proc/net/route")
 	case "/proc/self/mountinfo":
 		file, err = os.Open("/proc/self/mountinfo")
 	default:
@@ -71,6 +75,57 @@ func (l Live) Check(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	switch name {
+	case "subnets":
+		pool, err := netip.ParsePrefix(l.Config.Network.SubnetPool)
+		if err != nil {
+			return "", err
+		}
+		database, err := store.Open(ctx, filepath.Join(l.Config.DataDir, "arcana.db"))
+		if err != nil {
+			return "", err
+		}
+		installID := database.InstallID
+		if err = database.Close(); err != nil {
+			return "", err
+		}
+		engine, err := client.New(client.WithHost(l.Config.Runtime.Docker.Host))
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = engine.Close() }()
+		networks, err := engine.NetworkList(ctx, client.NetworkListOptions{})
+		if err != nil {
+			return "", err
+		}
+		if len(networks.Items) > 10000 {
+			return "", errors.New("too many networks")
+		}
+		owned := map[netip.Prefix]bool{}
+		for _, item := range networks.Items {
+			for _, ipam := range item.IPAM.Config {
+				if item.Labels["arcana.managed"] == "true" && item.Labels["arcana.instance"] == installID {
+					owned[ipam.Subnet] = true
+					continue
+				}
+				if pool.Overlaps(ipam.Subnet) {
+					return "", errors.New("subnet pool overlaps another Docker network")
+				}
+			}
+		}
+		data, err := boundedFile("/proc/net/route", 1<<20)
+		if err != nil {
+			return "", err
+		}
+		routes, err := netpolicy.HostRoutes(data)
+		if err != nil {
+			return "", err
+		}
+		for _, route := range routes {
+			if pool.Overlaps(route) && !owned[route] {
+				return "", errors.New("subnet pool overlaps a host route")
+			}
+		}
+		return "subnet pool is disjoint from other host routes and Docker networks", nil
 	case "os":
 		if goruntime.GOOS != "linux" {
 			return "", errors.New("native runtime requires Linux")

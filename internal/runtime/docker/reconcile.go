@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/netip"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
@@ -37,11 +39,46 @@ func (d *Driver) PruneOrphans(ctx context.Context, keep map[string]bool) error {
 	}
 	for _, network := range networks.Items {
 		id := network.Labels["arcana.sandbox_id"]
-		if !d.ownsResource(network.Labels, id) || keep[id] || network.Name != sandboxName(id)+"-net" {
+		if !d.ownsResource(network.Labels, id) || network.Name != sandboxName(id)+"-net" {
 			continue
+		}
+		if keep[id] {
+			subnet, err := netip.ParsePrefix(network.Labels["arcana.subnet"])
+			if err != nil {
+				return err
+			}
+			var allow []string
+			if err = json.Unmarshal([]byte(network.Labels["arcana.allow"]), &allow); err != nil {
+				return err
+			}
+			if _, err = d.startProxy(ctx, id, subnet, allow); err != nil {
+				return err
+			}
+			continue
+		}
+		if err = d.removeProxy(ctx, id); err != nil {
+			return err
 		}
 		if _, err = d.client.NetworkRemove(ctx, network.ID, client.NetworkRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
 			return fmt.Errorf("removing orphan network: %w", err)
+		}
+	}
+	if d.config.Network == nil {
+		return nil
+	}
+	proxies, err := d.client.ContainerList(ctx, client.ContainerListOptions{All: true, Limit: maxManaged + 1, Filters: make(client.Filters).Add("label", "arcana.managed=true", "arcana.instance="+d.config.InstallID, "arcana.proxy=true")})
+	if err != nil {
+		return err
+	}
+	if len(proxies.Items) > maxManaged {
+		return fmt.Errorf("proxy count exceeds cap")
+	}
+	for _, proxy := range proxies.Items {
+		id := proxy.Labels["arcana.sandbox_id"]
+		if !keep[id] && d.ownsResource(proxy.Labels, id) {
+			if err = d.removeProxy(ctx, id); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

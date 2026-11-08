@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add isolated allowlist networking, a bounded HTTP/CONNECT proxy with pinned public-IP dialing, explicit DNS, source policies, reconciliation and subnet diagnostics.
+
 - Add bounded per-template warm pools, compatible acquisition, cold fallback, backoff and shutdown cleanup.
 
 - Add an authenticated template registry endpoint and Go client method with resolved defaults and environment key names.

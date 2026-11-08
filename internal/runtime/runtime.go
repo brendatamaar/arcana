@@ -41,6 +41,7 @@ type Spec struct {
 	Env              map[string]string
 	Labels           map[string]string
 	WorkspaceBackend string
+	NetworkAllow     []string
 	NetworkMode      string
 	Workdir          string
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/knadh/koanf/v2"
 
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
+	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/pathutil"
 )
 
@@ -107,20 +108,25 @@ type Workspace struct {
 
 // Network contains the supported policy and future subnet allocation settings.
 type Network struct {
-	DefaultMode  string `koanf:"default_mode"`
-	SubnetPool   string `koanf:"subnet_pool"`
-	SubnetPrefix int    `koanf:"subnet_prefix"`
+	MaxAllowEntries int                 `koanf:"max_allow_entries"`
+	ProxyImage      string              `koanf:"proxy_image"`
+	ProxyDNS        []string            `koanf:"proxy_dns"`
+	Presets         map[string][]string `koanf:"presets"`
+	DefaultMode     string              `koanf:"default_mode"`
+	SubnetPool      string              `koanf:"subnet_pool"`
+	SubnetPrefix    int                 `koanf:"subnet_prefix"`
 }
 
 // Template maps a name to an image and optional sandbox defaults.
 type Template struct {
-	Name       string            `koanf:"name"`
-	Image      string            `koanf:"image"`
-	WarmPool   int               `koanf:"warm_pool"`
-	Resources  Resources         `koanf:"resources"`
-	TTLSeconds int               `koanf:"ttl_seconds"`
-	Env        map[string]string `koanf:"env"`
-	Workdir    string            `koanf:"workdir"`
+	NetworkPreset string            `koanf:"network_preset"`
+	Name          string            `koanf:"name"`
+	Image         string            `koanf:"image"`
+	WarmPool      int               `koanf:"warm_pool"`
+	Resources     Resources         `koanf:"resources"`
+	TTLSeconds    int               `koanf:"ttl_seconds"`
+	Env           map[string]string `koanf:"env"`
+	Workdir       string            `koanf:"workdir"`
 }
 
 // Log selects structured logging output.
@@ -137,7 +143,7 @@ func Default() Config {
 		Runtime:   Runtime{"docker", Docker{"unix:///var/run/docker.sock", "runsc", false}},
 		Limits:    Limits{20, 10, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
 		Workspace: Workspace{"volume", 15},
-		Network:   Network{"none", "10.200.0.0/16", 28},
+		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
 		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
 		Log:       Log{"info", "json"},
 	}
@@ -243,14 +249,36 @@ func (c Config) Validate() error {
 	if c.Workspace.Backend != "volume" && c.Workspace.Backend != "tmpfs" {
 		bad("workspace.backend", "must be volume or tmpfs")
 	}
-	if c.Network.DefaultMode != "none" {
-		bad("network.default_mode", "only none is supported in v0.1")
+	if c.Network.DefaultMode != "none" && c.Network.DefaultMode != "allowlist" {
+		bad("network.default_mode", "must be none or allowlist")
 	}
 	prefix, err := netip.ParsePrefix(c.Network.SubnetPool)
 	if err != nil {
 		bad("network.subnet_pool", "must be a CIDR")
-	} else if prefix != prefix.Masked() || c.Network.SubnetPrefix < prefix.Bits() || c.Network.SubnetPrefix > prefix.Addr().BitLen() {
+	} else if prefix != prefix.Masked() || c.Network.SubnetPrefix < prefix.Bits() || c.Network.SubnetPrefix > 29 || !prefix.Addr().Is4() || c.Network.SubnetPrefix-prefix.Bits() > 16 {
 		bad("network.subnet_prefix", "must fit the canonical subnet pool")
+	}
+	if c.Network.MaxAllowEntries < 1 || c.Network.MaxAllowEntries > 50 {
+		bad("network.max_allow_entries", "must be 1..50")
+	}
+	if c.Network.ProxyImage == "" {
+		bad("network.proxy_image", "must not be empty")
+	}
+	if _, err := netpolicy.DNSResolver(c.Network.ProxyDNS); err != nil {
+		bad("network.proxy_dns", "must contain 1..4 DNS IPs")
+	}
+	if len(c.Network.Presets) > 50 {
+		bad("network.presets", "at most 50 presets")
+	}
+	for _, hosts := range c.Network.Presets {
+		if len(hosts) > c.Network.MaxAllowEntries {
+			bad("network.presets", "too many entries")
+		}
+		for _, host := range hosts {
+			if _, err := netpolicy.Host(host); err != nil {
+				bad("network.presets", "invalid hostname")
+			}
+		}
 	}
 	if len(c.Templates) > 1000 {
 		bad("templates", "must contain at most 1000 entries")
@@ -268,6 +296,11 @@ func (c Config) Validate() error {
 		names[t.Name] = true
 		if t.Image == "" {
 			bad(field+".image", "must not be empty")
+		}
+		if t.NetworkPreset != "" {
+			if _, ok := c.Network.Presets[t.NetworkPreset]; !ok {
+				bad(field+".network_preset", "unknown network preset")
+			}
 		}
 		poolTarget += t.WarmPool
 		if t.WarmPool < 0 || t.WarmPool > c.Limits.MaxSandboxes {

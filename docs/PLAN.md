@@ -255,11 +255,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added bounded fresh-instance pools for configured template/network defaults, serialized filler with capped backoff, immutable-setting cold fallback, quota-safe idle-member eviction, source=pool reservations, runtime pool labels, restart orphan reconciliation, shutdown drain and PoolAvailable metrics hook. Race tests cover acquire/fill, capacity, fallback and cleanup. runsc integration measured 54ms acquire versus 2.09s cold; make check, required race tests, full integration and escape suites passed.
 
-### [ ] T2.4 Allowlist networking and egress proxy
+### [x] T2.4 Allowlist networking and egress proxy
 - **Deps:** T0.5, T2.2 · **PRD:** FR-NW-2…7, FR-CL-3
 - **Do:** `internal/netpolicy`: subnet allocator from `subnet_pool` (persisted allocations or derived from Docker state on start), per-sandbox internal network creation and cleanup, proxy container lifecycle (`arcana proxy` using the Arcana image), connecting the proxy to each sandbox network, injecting `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`. Proxy server: `CONNECT` and plain HTTP, per-source-IP allowlist pushed from Arcana (control channel on a local socket or HTTP with a shared secret), DNS resolution then IP range checks, connect to resolved IP, byte counting, decision events back to Arcana. Presets from config. Doctor check for subnet overlap.
 - **Acceptance:** unit tests for allocator and IP range checks (IPv4 and IPv6); integration tests for allowed and denied hosts.
 - **Verify:** `go test ./internal/netpolicy/... && make test-integration`
+
+> Done: Added config/API/CLI allowlists and presets, Docker-derived bounded subnet allocation, isolated per-sandbox runsc proxies, pinned public-IP HTTP/CONNECT forwarding, exec-bridged authenticated Unix control, bounded decision queues, startup restoration/orphan cleanup and subnet diagnostics. Live tests installed requests/lodash/Go modules, denied non-allowlisted/direct egress, preserved peer health and restored access after reconciliation. Network fixtures use separate ranges to keep the new overlap diagnostic meaningful. make proxy-image, task verification, make check and full integration passed. ESC-03 initially failed during concurrent package execution; it passed in isolation and the full escape suite passed with GOFLAGS=-p=1, with every attack and assertion unchanged. Owner-approved durable audit wiring follows in T2.5.
 
 ### [ ] T2.5 Audit log
 - **Deps:** T2.4 · **PRD:** FR-AD-1, FR-AD-2, FR-FS-6
@@ -454,6 +456,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-03 — Validate the marked README quickstart blocks verbatim on a fresh Ubuntu 24.04 GitHub-hosted VM with Go/Docker prerequisites, plus the authorized VPS — avoids documentation drift while exercising go install, runsc Doctor, daemon startup, first exec, file round trip and cleanup with new private state. The demo explicitly opts into destroy_on_shutdown; production defaults remain unchanged — T1.18, README, scripts/check_quickstart.py.
 
+- 2026-11-08 — Use one isolated proxy per allowlist sandbox and exec-bridged private Unix control; preserve internal IP/MAC on recreation — keeps each complete runsc network set fixed, avoids host Unix-socket visibility assumptions and preserves healthy sandbox neighbour caches; owner-approved audit sequencing emits bounded events in T2.4 and persists them in T2.5 — PRD FR-NW-2/7, docs/networking.md.
+
 ## Open questions
 
 
@@ -469,3 +473,5 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-01 — Resolved by owner approval: add the Apache-2.0 companion runtime and continue. Original question: Approve github.com/oapi-codegen/runtime v1.8.0, the companion dependency imported by the approved oapi-codegen std-http-server generator? It is absent from the approved list; cannot compile or verify T1.5 without it. Owner approved 2026-11-01; T1.5 resumed.
 
 - 2026-11-08 — Resolved: owner supplied Git author brendatamaar <brendatama10@gmail.com>; configured repository-local identity and resumed T2.1 commit.
+
+- 2026-11-08 — Resolved by owner approval: T2.4 may implement bounded proxy decision events, with durable audit storage/wiring deferred to T2.5 and FR-NW-7 considered complete only then? FR-NW-7 requires every proxy decision in the audit log, while T2.5 introduces that log and depends on T2.4. AGENTS requires stopping on document conflicts — blocking T2.4.

@@ -175,6 +175,13 @@ func (s *Service) Watch(ctx context.Context) error {
 
 // Maintain owns independent reaper and watchdog loops and joins both on cancellation.
 func (s *Service) Maintain(ctx context.Context, logger *slog.Logger) {
+	networkDone := make(chan struct{})
+	go func() {
+		defer close(networkDone)
+		if driver, ok := s.driver.(interface{ DrainDecisions(context.Context) error }); ok {
+			s.maintenanceLoop(ctx, time.Second, driver.DrainDecisions, logger, "proxy decision drain failed")
+		}
+	}()
 	poolDone := make(chan struct{})
 	go func() { defer close(poolDone); s.maintainPool(ctx, logger) }()
 	watchDone := make(chan struct{})
@@ -185,6 +192,7 @@ func (s *Service) Maintain(ctx context.Context, logger *slog.Logger) {
 	s.maintenanceLoop(ctx, time.Second, s.Reap, logger, "reaper failed")
 	<-watchDone
 	<-poolDone
+	<-networkDone
 }
 
 func (s *Service) maintenanceLoop(ctx context.Context, interval time.Duration, action func(context.Context) error, logger *slog.Logger, message string) {

@@ -74,6 +74,11 @@ type Service struct {
 
 // New constructs an orchestrator with independent operator configuration.
 func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock Clock) *Service {
+	cfg.Network.ProxyDNS = slices.Clone(cfg.Network.ProxyDNS)
+	cfg.Network.Presets = maps.Clone(cfg.Network.Presets)
+	for name, hosts := range cfg.Network.Presets {
+		cfg.Network.Presets[name] = slices.Clone(hosts)
+	}
 	cfg.Templates = slices.Clone(cfg.Templates)
 	for i := range cfg.Templates {
 		cfg.Templates[i].Env = maps.Clone(cfg.Templates[i].Env)
@@ -135,7 +140,7 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, request 
 	defer cancel()
 	if createErr != nil {
 		_, persistErr := s.transition(finishCtx, row, CreateFailed, "create_failed", "")
-		return db.Sandbox{}, errors.Join(fmt.Errorf("%w: creating instance", ErrRuntime), persistErr)
+		return db.Sandbox{}, errors.Join(fmt.Errorf("%w: creating instance: %w", ErrRuntime, createErr), persistErr)
 	}
 	result, err := s.transition(finishCtx, row, Created, "", instance.ID)
 	if err != nil {
@@ -175,8 +180,9 @@ func (s *Service) reserve(ctx context.Context, p auth.Principal, id string, plan
 		labels = map[string]string{}
 	}
 	labelData, _ := json.Marshal(labels)
+	networkAllow, _ := json.Marshal(plan.spec.NetworkAllow)
 	r := plan.spec.Resources
-	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: plan.source, Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now})
+	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: plan.source, Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, NetworkAllow: sql.NullString{String: string(networkAllow), Valid: true}, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now})
 	if err != nil {
 		return db.Sandbox{}, fmt.Errorf("reserving sandbox: %w", err)
 	}

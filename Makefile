@@ -39,3 +39,7 @@ clean:
 .PHONY: templates
 templates:
 	@for name in base python node go; do docker build -t arcana-$$name:local templates/$$name || exit $$?; done
+
+.PHONY: proxy-image
+proxy-image: build
+	docker build -f deploy/Dockerfile -t arcana:local .

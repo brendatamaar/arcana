@@ -53,7 +53,7 @@ jobs:
             done
             exit 1
           fi
-      - run: make templates
+      - run: make templates proxy-image
       - name: Run integration and escape suites with runsc
         shell: bash
         run: |

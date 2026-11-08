@@ -50,6 +50,9 @@ func sandboxModel(row db.Sandbox) gen.Sandbox {
 	labels := map[string]string{}
 	_ = json.Unmarshal([]byte(row.Labels.String), &labels)
 	result := gen.Sandbox{Id: row.ID, Template: row.Template, Runtime: row.Runtime, State: gen.SandboxState(row.State), Source: gen.SandboxSource(row.Source), CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt, IdleTimeoutSeconds: &row.IdleTimeoutSeconds, LastActivityAt: &row.LastActivityAt, Labels: labels, Network: gen.Network{Mode: gen.NetworkMode(row.NetworkMode)}, Resources: gen.Resources{Cpus: &cpus, MemoryMb: &row.MemoryMb.Int64, DiskMb: &row.DiskMb.Int64, Pids: &row.Pids.Int64}}
+	var allow []string
+	_ = json.Unmarshal([]byte(row.NetworkAllow.String), &allow)
+	result.Network.Allow = &allow
 	if row.EndedAt.Valid {
 		result.EndedAt = &row.EndedAt.Time
 	}
@@ -78,6 +81,12 @@ func (s *Server) CreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.Network != nil {
 		input.NetworkMode = string(request.Network.Mode)
+		if request.Network.Allow != nil {
+			input.NetworkAllow = *request.Network.Allow
+		}
+		if request.Network.Presets != nil {
+			input.NetworkPresets = *request.Network.Presets
+		}
 		if input.NetworkMode == "" {
 			s.failure(w, r, apierr.NewInvalidRequest("network.mode is required"))
 			return

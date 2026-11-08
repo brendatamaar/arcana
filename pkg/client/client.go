@@ -30,6 +30,8 @@ type (
 	Resources = gen.Resources
 	// Network uses the generated v0.1 wire model.
 	Network = gen.Network
+	// NetworkMode selects none or allowlist.
+	NetworkMode = gen.NetworkMode
 	// Key uses the generated v0.1 wire model.
 	Key = gen.Key
 	// KeyList uses the generated v0.1 wire model.

@@ -119,12 +119,15 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for NetworkMode.
 const (
-	None NetworkMode = "none"
+	Allowlist NetworkMode = "allowlist"
+	None      NetworkMode = "none"
 )
 
 // Valid indicates whether the value is a known member of the NetworkMode enum.
 func (e NetworkMode) Valid() bool {
 	switch e {
+	case Allowlist:
+		return true
 	case None:
 		return true
 	default:
@@ -290,7 +293,9 @@ type KeyList struct {
 
 // Network defines model for Network.
 type Network struct {
-	Mode NetworkMode `json:"mode"`
+	Allow   *[]string   `json:"allow,omitempty"`
+	Mode    NetworkMode `json:"mode"`
+	Presets *[]string   `json:"presets,omitempty"`
 }
 
 // NetworkMode defines model for Network.Mode.
@@ -341,6 +346,7 @@ type Template struct {
 	Image              string    `json:"image"`
 	Name               string    `json:"name"`
 	NetworkMode        string    `json:"network_mode"`
+	NetworkPreset      *string   `json:"network_preset,omitempty"`
 	Resources          Resources `json:"resources"`
 	TtlSeconds         int64     `json:"ttl_seconds"`
 	WarmPool           int       `json:"warm_pool"`

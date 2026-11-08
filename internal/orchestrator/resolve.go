@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/pathutil"
 	"github.com/brendatamaar/arcana/internal/runtime"
 )
@@ -24,6 +25,7 @@ type CreateRequest struct {
 	TTLSeconds, IdleTimeoutSeconds *int64
 	Resources                      Overrides
 	Env, Labels                    map[string]string
+	NetworkAllow, NetworkPresets   []string
 	NetworkMode                    string
 }
 
@@ -97,8 +99,41 @@ func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
 	if network == "" {
 		network = cfg.Network.DefaultMode
 	}
-	if network != "none" {
-		return resolved{}, fmt.Errorf("%w: v0.1 supports network mode none", ErrInvalid)
+	if network != "none" && network != "allowlist" {
+		return resolved{}, fmt.Errorf("%w: unsupported network mode", ErrInvalid)
+	}
+	allow := make([]string, 0)
+	if len(request.NetworkAllow) > cfg.Network.MaxAllowEntries || len(request.NetworkPresets) > 50 {
+		return resolved{}, ErrInvalid
+	}
+	entries := append([]string{}, request.NetworkAllow...)
+	presets := append([]string{}, request.NetworkPresets...)
+	if network == "allowlist" && template.NetworkPreset != "" {
+		presets = append(presets, template.NetworkPreset)
+	}
+	for _, preset := range presets {
+		hosts, ok := cfg.Network.Presets[preset]
+		if !ok {
+			return resolved{}, ErrInvalid
+		}
+		entries = append(entries, hosts...)
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		host, err := netpolicy.Host(entry)
+		if err != nil {
+			return resolved{}, ErrInvalid
+		}
+		if !seen[host] {
+			seen[host] = true
+			allow = append(allow, host)
+		}
+		if len(allow) > cfg.Network.MaxAllowEntries {
+			return resolved{}, ErrInvalid
+		}
+	}
+	if network == "none" && len(allow) > 0 {
+		return resolved{}, ErrInvalid
 	}
 	env := maps.Clone(template.Env)
 	if env == nil {
@@ -118,7 +153,7 @@ func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
 	if !allowedPath(workdir, cfg.Limits.Files.AllowedRoots) {
 		return resolved{}, fmt.Errorf("%w: template workdir outside allowed roots", ErrInvalid)
 	}
-	return resolved{spec: runtime.Spec{Image: template.Image, Resources: runtime.Resources{CPUs: resources.CPUs, MemoryMB: resources.MemoryMB, DiskMB: resources.DiskMB, PIDs: resources.PIDs}, Env: env, Labels: maps.Clone(request.Labels), WorkspaceBackend: cfg.Workspace.Backend, NetworkMode: network, Workdir: path.Clean(workdir)}, ttl: ttl, idle: idle, template: template.Name}, nil
+	return resolved{spec: runtime.Spec{Image: template.Image, Resources: runtime.Resources{CPUs: resources.CPUs, MemoryMB: resources.MemoryMB, DiskMB: resources.DiskMB, PIDs: resources.PIDs}, Env: env, Labels: maps.Clone(request.Labels), WorkspaceBackend: cfg.Workspace.Backend, NetworkMode: network, NetworkAllow: allow, Workdir: path.Clean(workdir)}, ttl: ttl, idle: idle, template: template.Name}, nil
 }
 
 func validateMap(values map[string]string, env bool) error {

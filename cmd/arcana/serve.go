@@ -48,7 +48,7 @@ func newServeCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		driver, err := docker.New(docker.Config{Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
+		driver, err := docker.New(docker.Config{Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
 		if err != nil {
 			return err
 		}

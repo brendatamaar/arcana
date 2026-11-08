@@ -212,6 +212,7 @@ func cloneInstance(instance runtime.Instance) runtime.Instance {
 func cloneSpec(spec runtime.Spec) runtime.Spec {
 	spec.Labels = maps.Clone(spec.Labels)
 	spec.Env = maps.Clone(spec.Env)
+	spec.NetworkAllow = slices.Clone(spec.NetworkAllow)
 	return spec
 }
 

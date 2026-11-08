@@ -12,6 +12,8 @@ components:
       additionalProperties: false
       required: [name, image, resources, ttl_seconds, idle_timeout_seconds, workdir, network_mode, warm_pool, env_keys]
       properties:
+        network_preset:
+          type: string
         name:
           type: string
         image:
@@ -297,9 +299,22 @@ components:
     Network:
       additionalProperties: false
       properties:
+        allow:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 253
+        presets:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 128
         mode:
           enum:
             - none
+            - allowlist
           type: string
       required:
         - mode

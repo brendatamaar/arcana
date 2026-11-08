@@ -115,7 +115,7 @@ func (p *fakeProbe) Check(ctx context.Context, name string) (string, error) {
 
 func TestRun_IndependentChecksAndBlockingPolicy(t *testing.T) {
 	cfg := config.Default()
-	for _, name := range []string{"", "os", "kernel", "cgroups", "docker", "data_dir", "database", "kvm", "runsc", "image:" + cfg.Templates[0].Image} {
+	for _, name := range []string{"", "os", "kernel", "cgroups", "docker", "data_dir", "database", "subnets", "kvm", "runsc", "image:" + cfg.Templates[0].Image} {
 		t.Run(name, func(t *testing.T) {
 			probe := &fakeProbe{fail: name}
 			report := Run(context.Background(), cfg, probe)
@@ -123,7 +123,7 @@ func TestRun_IndependentChecksAndBlockingPolicy(t *testing.T) {
 			if report.Failed() != wantFail {
 				t.Fatalf("blocking=%t: %+v", wantFail, report)
 			}
-			if len(probe.calls) != 9 {
+			if len(probe.calls) != 10 {
 				t.Fatal("independent checks skipped", probe.calls)
 			}
 			for _, result := range report.Checks {

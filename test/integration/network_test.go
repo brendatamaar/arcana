@@ -39,7 +39,7 @@ func TestNetwork_InternalProxyAndIsolation(t *testing.T) {
 		return name
 	}
 	outbound := network("outbound", false)
-	firstNet, secondNet := network("10.200.250.0/28", true), network("10.200.250.16/28", true)
+	firstNet, secondNet := network("10.203.250.0/28", true), network("10.203.250.16/28", true)
 	start := func(netName, mode string) string {
 		args := []string{"create", "--runtime=runsc", "--network", netName, "--read-only", "--user=1000:1000", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--tmpfs=/tmp:size=16m", "--tmpfs=/run/sbx:size=4m,uid=1000,gid=1000,mode=0700", "--pids-limit=64", "--cpus=0.5", "--memory=256m", "--memory-swap=256m", "--label=arcana.managed=true", "--label=arcana.instance=phase0-spike", "--label=arcana.spike=004", "--mount", "type=bind,src=" + path + ",dst=/opt/arcana/sbx-exec,readonly", "debian:stable-slim", "/opt/arcana/sbx-exec", mode}
 		id := docker(t, ctx, args...)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"slices"
 	"time"
 
 	"github.com/brendatamaar/arcana/internal/ids"
@@ -14,7 +15,7 @@ import (
 // acquirePool accepts only exact immutable creation settings. Instances are never reused.
 func (s *Service) acquirePool(plan resolved) (runtime.Instance, bool) {
 	baseline, err := resolve(s.cfg, CreateRequest{Template: plan.template})
-	if err != nil || baseline.spec.Resources != plan.spec.Resources || baseline.spec.Workdir != plan.spec.Workdir || baseline.spec.NetworkMode != plan.spec.NetworkMode || !maps.Equal(baseline.spec.Env, plan.spec.Env) || len(plan.spec.Labels) != 0 {
+	if err != nil || baseline.spec.Resources != plan.spec.Resources || baseline.spec.Workdir != plan.spec.Workdir || !slices.Equal(baseline.spec.NetworkAllow, plan.spec.NetworkAllow) || baseline.spec.NetworkMode != plan.spec.NetworkMode || !maps.Equal(baseline.spec.Env, plan.spec.Env) || len(plan.spec.Labels) != 0 {
 		return runtime.Instance{}, false
 	}
 	s.poolMu.Lock()

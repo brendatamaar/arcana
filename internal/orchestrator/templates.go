@@ -8,6 +8,7 @@ import (
 
 // Template describes configured defaults without environment values.
 type Template struct {
+	NetworkPreset                  string
 	Name                           string
 	Image                          string
 	Resources                      config.Resources
@@ -31,7 +32,7 @@ func (s *Service) Templates() ([]Template, error) {
 		}
 		slices.Sort(keys)
 		r := plan.spec.Resources
-		items = append(items, Template{Name: template.Name, Image: template.Image, Resources: config.Resources{CPUs: r.CPUs, MemoryMB: r.MemoryMB, DiskMB: r.DiskMB, PIDs: r.PIDs}, TTLSeconds: plan.ttl, IdleTimeoutSeconds: plan.idle, Workdir: plan.spec.Workdir, NetworkMode: plan.spec.NetworkMode, WarmPool: template.WarmPool, EnvKeys: keys})
+		items = append(items, Template{NetworkPreset: template.NetworkPreset, Name: template.Name, Image: template.Image, Resources: config.Resources{CPUs: r.CPUs, MemoryMB: r.MemoryMB, DiskMB: r.DiskMB, PIDs: r.PIDs}, TTLSeconds: plan.ttl, IdleTimeoutSeconds: plan.idle, Workdir: plan.spec.Workdir, NetworkMode: plan.spec.NetworkMode, WarmPool: template.WarmPool, EnvKeys: keys})
 	}
 	return items, nil
 }

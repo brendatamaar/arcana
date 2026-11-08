@@ -64,6 +64,9 @@ func printSandbox(cmd *cobra.Command, rows []client.Sandbox) error {
 func newSandboxCommand() *cobra.Command {
 	sandbox := &cobra.Command{Use: "sandbox", Short: "Manage remote sandboxes"}
 	create := &cobra.Command{Use: "create", Short: "Create a sandbox", Args: cobra.NoArgs}
+	networkMode := create.Flags().String("network", "none", "Network mode (none or allowlist)")
+	allow := create.Flags().StringSlice("allow", nil, "Exact allowed hostnames")
+	presets := create.Flags().StringSlice("network-preset", nil, "Configured allowlist presets")
 	template := create.Flags().String("template", "base", "Template name")
 	ttl := create.Flags().Int64("ttl", 0, "TTL in seconds (server default when omitted)")
 	idle := create.Flags().Int64("idle-timeout", 0, "Idle timeout in seconds")
@@ -73,6 +76,9 @@ func newSandboxCommand() *cobra.Command {
 			return err
 		}
 		request := client.CreateSandboxRequest{Template: *template}
+		if cmd.Flags().Changed("network") || len(*allow) > 0 || len(*presets) > 0 {
+			request.Network = &client.Network{Mode: client.NetworkMode(*networkMode), Allow: allow, Presets: presets}
+		}
 		if cmd.Flags().Changed("ttl") {
 			request.TtlSeconds = ttl
 		}

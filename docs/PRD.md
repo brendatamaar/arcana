@@ -134,12 +134,12 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 ### 7.5 Network (NW)
 
 - **FR-NW-1 [v0.1]** Mode `none` (default): the sandbox has no network interfaces besides loopback.
-- **FR-NW-2 [v0.2]** Mode `allowlist`: the sandbox is attached to its own internal Docker network (no route out). An egress proxy (Arcana running in `proxy` mode in a dedicated container) is attached to that network and to an outbound network. Sandboxes receive `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` variables. Direct connections fail because there is no route. For a runsc proxy, attach its complete network set before starting it; recreate it when that set changes. The proxy uses explicit operator-configured DNS upstreams on its outbound network rather than relying on Docker embedded DNS (validated in T0.5).
+- **FR-NW-2 [v0.2]** Mode `allowlist`: the sandbox is attached to its own internal Docker network (no route out). An egress proxy (Arcana running in `proxy` mode in a dedicated container) is attached to that network and to an outbound network. Sandboxes receive `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` variables. Direct connections fail because there is no route. For a runsc proxy, attach its complete network set before starting it; recreate it when that set changes. The proxy uses explicit operator-configured DNS upstreams on its outbound network rather than relying on Docker embedded DNS (validated in T0.5). T2.4 uses one dedicated proxy per sandbox, with a private container-local Unix control socket reached through a bounded trusted exec helper. Recreated proxies retain their internal IP/MAC to preserve neighbour caches.
 - **FR-NW-3 [v0.2]** The proxy allows only hostnames on the sandbox's allowlist. HTTPS is handled through `CONNECT` without TLS interception; plain HTTP by `Host` header.
 - **FR-NW-4 [v0.2]** SSRF protection: after DNS resolution the proxy rejects private, loopback, link-local (including `169.254.169.254`), multicast and unique-local addresses, and connects to the already-resolved IP to prevent DNS rebinding.
 - **FR-NW-5 [v0.2]** Per-sandbox networks get subnets from Arcana's own pool (`network.subnet_pool`, `network.subnet_prefix`) to avoid exhausting Docker's default address pools.
 - **FR-NW-6 [v0.2]** Allowlist presets per ecosystem (python, node, go) defined in config; requests can combine presets and explicit hostnames, capped by `network.max_allow_entries`.
-- **FR-NW-7 [v0.2]** Every proxy decision (allow or deny, host, port, bytes, sandbox ID) is written to the audit log.
+- **FR-NW-7 [v0.2]** Every proxy decision (allow or deny, host, port, bytes, sandbox ID) is written to the audit log. Owner-approved sequencing: T2.4 emits bounded decision events with overflow counts; T2.5 wires durable audit storage and completes this requirement.
 - **FR-NW-8** Mode `open` (unrestricted egress) is **not supported** in any release. This is deliberate.
 
 ### 7.6 Templates (TP)
