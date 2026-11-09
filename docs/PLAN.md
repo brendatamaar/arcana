@@ -278,10 +278,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added all PRD collectors plus audit-loss counters on the separately owned metrics listener, bounded route/outcome labels, live SQL/pool gauges and middleware preserving WebSocket/shutdown behavior. Added digest-pinned Prometheus/Grafana Compose provisioning and a temporary-stack smoke script; real exec samples reached Prometheus and Grafana datasource/dashboard queries. Metrics verification (87.8% coverage), make check, full integration and escape suites passed. Validation: docs/compose-validation.md.
 
-### [ ] T2.7 Quotas and rate limiting
+### [x] T2.7 Quotas and rate limiting
 - **Deps:** T2.3 · **PRD:** FR-AU-6
 - **Do:** Per-key token bucket for sandbox creation; `rate_limited` errors with `Retry-After`.
 - **Verify:** `go test ./internal/api/...`
+
+> Done: Added configurable per-key creation token buckets (default 30/min), continuous refill, bounded fail-closed 10000-key state with idle reclamation, rate_limited/Retry-After responses and Go client retry-delay metadata without mutation retries. Tests cover independent keys, refill/backwards clocks, concurrent admission, state bounds, auth precedence and no DB/runtime reservation on denial. Task verification, make check, full serial integration and escape suites passed. User-requested stopping point reached; T2.8 onward remains unstarted.
 
 ### [ ] T2.8 Escape suite v2 (network)
 - **Deps:** T2.4 · **PRD:** §12.4 ESC-15…19
@@ -484,9 +486,9 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 
 - 2026-11-08 — Resolved: owner supplied Git author brendatamaar <brendatama10@gmail.com>; configured repository-local identity and resumed T2.1 commit.
 
-- 2026-11-08 — Resolved by owner approval: T2.4 may implement bounded proxy decision events, with durable audit storage/wiring deferred to T2.5 and FR-NW-7 considered complete only then? FR-NW-7 requires every proxy decision in the audit log, while T2.5 introduces that log and depends on T2.4. AGENTS requires stopping on document conflicts — blocking T2.4.
+- 2026-11-08 — Resolved by owner approval: T2.4 may implement bounded proxy decision events, with durable audit storage/wiring in T2.5; both tasks are complete and FR-NW-7 is implemented.
 
-- 2026-11-09 — Approve the proposed ESC-03 cgroup CPU accounting/throttling checks while retaining the attack, 1500 ms ceiling and peer-health assertions? The existing guest timing assertion repeatedly failed; controlled measurements differ from cgroup-backed CPU usage, but the failing suite run was not instrumented. No escape test was weakened — docs/spikes/005-cpu-accounting.md — blocking T2.5.
+- 2026-11-09 — Resolved by owner approval and successful verification: the proposed ESC-03 cgroup CPU accounting/throttling checks while retaining the attack, 1500 ms ceiling and peer-health assertions? The existing guest timing assertion repeatedly failed; controlled measurements differ from cgroup-backed CPU usage, but the failing suite run was not instrumented. No escape test was weakened — docs/spikes/005-cpu-accounting.md; T2.5 is complete.
 
 - 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
 

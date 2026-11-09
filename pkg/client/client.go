@@ -80,8 +80,9 @@ type Client struct {
 // ErrLimit reports a response or transfer exceeding the configured byte cap.
 var ErrLimit = errors.New("arcana client byte limit exceeded")
 
-// Error is an API failure; errors.As exposes Code, StatusCode and RequestID.
+// Error is an API failure; errors.As exposes the code, request ID and retry delay.
 type Error struct {
+	RetryAfterSeconds        int64
 	StatusCode               int
 	Code, Message, RequestID string
 }
@@ -165,7 +166,11 @@ func decodeError(resp *http.Response) error {
 	if err != nil || len(data) > 65536 || json.Unmarshal(data, &envelope) != nil || envelope.Error.Code == "" {
 		return &Error{StatusCode: resp.StatusCode, Code: "invalid_response", Message: "server returned an invalid error envelope"}
 	}
-	return &Error{resp.StatusCode, envelope.Error.Code, envelope.Error.Message, envelope.Error.RequestID}
+	retry, _ := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64)
+	if retry < 0 || retry > 86400 {
+		retry = 0
+	}
+	return &Error{StatusCode: resp.StatusCode, Code: envelope.Error.Code, Message: envelope.Error.Message, RequestID: envelope.Error.RequestID, RetryAfterSeconds: retry}
 }
 
 func (c *Client) json(ctx context.Context, method, path string, q url.Values, input, output any) error {

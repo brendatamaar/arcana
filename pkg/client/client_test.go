@@ -363,3 +363,24 @@ func TestListAudit_FilterEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRateLimitedError_ExposesRetryWithoutAutomaticRetry(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "2")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"code":"rate_limited","message":"creation rate exceeded","request_id":"request"}}`)
+	}))
+	defer server.Close()
+	c, err := client.New(server.URL, "key", client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.CreateSandbox(context.Background(), client.CreateSandboxRequest{Template: "base"})
+	var failure *client.Error
+	if !errors.As(err, &failure) || failure.Code != "rate_limited" || failure.RetryAfterSeconds != 2 || calls != 1 {
+		t.Fatal(err, calls)
+	}
+}

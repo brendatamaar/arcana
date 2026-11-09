@@ -77,13 +77,14 @@ type Defaults struct {
 
 // Limits bounds sandbox creation, execution and file transfer.
 type Limits struct {
-	MaxSandboxes       int       `koanf:"max_sandboxes"`
-	MaxSandboxesPerKey int       `koanf:"max_sandboxes_per_key"`
-	MaxTTLSeconds      int       `koanf:"max_ttl_seconds"`
-	Defaults           Defaults  `koanf:"defaults"`
-	Maximums           Resources `koanf:"maximums"`
-	Exec               Exec      `koanf:"exec"`
-	Files              Files     `koanf:"files"`
+	MaxSandboxes          int       `koanf:"max_sandboxes"`
+	MaxSandboxesPerKey    int       `koanf:"max_sandboxes_per_key"`
+	CreatePerMinutePerKey int       `koanf:"create_per_minute_per_key"`
+	MaxTTLSeconds         int       `koanf:"max_ttl_seconds"`
+	Defaults              Defaults  `koanf:"defaults"`
+	Maximums              Resources `koanf:"maximums"`
+	Exec                  Exec      `koanf:"exec"`
+	Files                 Files     `koanf:"files"`
 }
 
 // Exec bounds command execution.
@@ -147,7 +148,7 @@ func Default() Config {
 		Server:    Server{"127.0.0.1:7070", "127.0.0.1:9090", 30, false},
 		DataDir:   "/var/lib/arcana",
 		Runtime:   Runtime{"docker", Docker{"unix:///var/run/docker.sock", "runsc", false}},
-		Limits:    Limits{20, 10, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
+		Limits:    Limits{20, 10, 30, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
 		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
@@ -230,6 +231,9 @@ func (c Config) Validate() error {
 		bad("limits.max_sandboxes_per_key", "exceeds limits.max_sandboxes")
 	}
 	compareResources(c.Limits.Defaults.Resources, c.Limits.Maximums, "limits.defaults", bad)
+	if c.Limits.CreatePerMinutePerKey < 1 || c.Limits.CreatePerMinutePerKey > 10000 {
+		bad("limits.create_per_minute_per_key", "must be 1..10000")
+	}
 	if c.Limits.Defaults.TTLSeconds > c.Limits.MaxTTLSeconds {
 		bad("limits.defaults.ttl_seconds", "exceeds limits.max_ttl_seconds")
 	}

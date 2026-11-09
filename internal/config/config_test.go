@@ -141,3 +141,17 @@ func TestTemplates_CountBound(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreationRate_ConfigurationBounds(t *testing.T) {
+	for _, value := range []int{0, -1, 10001} {
+		cfg := Default()
+		cfg.Limits.CreatePerMinutePerKey = value
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "create_per_minute_per_key") {
+			t.Fatal(value, err)
+		}
+	}
+	cfg := Default()
+	if cfg.Limits.CreatePerMinutePerKey != 30 {
+		t.Fatal("unexpected default")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 	"github.com/brendatamaar/arcana/internal/apierr"
@@ -66,6 +67,16 @@ func sandboxModel(row db.Sandbox) gen.Sandbox {
 func (s *Server) CreateSandbox(w http.ResponseWriter, r *http.Request) {
 	if s.lifecycle == nil {
 		s.notImplemented(w, r)
+		return
+	}
+	principal, ok := auth.FromContext(r.Context())
+	if !ok {
+		s.failure(w, r, apierr.NewUnauthorized("authentication required"))
+		return
+	}
+	if retry := s.limiter.admit(principal.ID); retry > 0 {
+		w.Header().Set("Retry-After", strconv.FormatInt(retry, 10))
+		s.failure(w, r, apierr.NewRateLimited("sandbox creation rate exceeded"))
 		return
 	}
 	var request gen.CreateSandbox

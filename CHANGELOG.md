@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add per-key sandbox-creation token buckets, Retry-After responses and Go client retry-delay metadata without automatic retries.
+
 - Add separate Prometheus metrics, provisioned Grafana panels and a loopback-only Compose stack with a repeatable live-data smoke check.
 
 - Add asynchronous metadata audit storage, owner-attributed egress events, admin filtering/pagination, retention pruning and Go client queries.

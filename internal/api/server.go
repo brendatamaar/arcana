@@ -20,12 +20,15 @@ import (
 
 // Options supplies optional later-phase services.
 type Options struct {
-	Audit      *audit.Writer
-	Middleware func(http.Handler) http.Handler
+	CreatePerMinute int
+	RateClock       RateClock
+	Audit           *audit.Writer
+	Middleware      func(http.Handler) http.Handler
 }
 
 // Server implements the generated API contract.
 type Server struct {
+	limiter   *creationLimiter
 	audit     *audit.Writer
 	keys      *auth.Service
 	logger    *slog.Logger
@@ -42,7 +45,15 @@ func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle 
 	if len(options) > 0 {
 		recorder = options[0].Audit
 	}
-	server := &Server{audit: recorder, keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
+	rate := 30
+	var clock RateClock
+	if len(options) > 0 {
+		if options[0].CreatePerMinute != 0 {
+			rate = options[0].CreatePerMinute
+		}
+		clock = options[0].RateClock
+	}
+	server := &Server{limiter: newCreationLimiter(rate, clock), audit: recorder, keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})

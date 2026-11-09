@@ -740,7 +740,17 @@ paths:
         "413":
           $ref: '#/components/responses/Error'
         "429":
-          $ref: '#/components/responses/Error'
+          description: Sandbox quota or creation rate exceeded
+          headers:
+            Retry-After:
+              description: Seconds until retry; supplied for rate_limited responses
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         "500":
           $ref: '#/components/responses/Error'
         "501":

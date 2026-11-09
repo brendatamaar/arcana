@@ -164,7 +164,7 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 - **FR-AU-3 [v0.1]** On first start with an empty database, Arcana creates an admin key, prints it once to the terminal, and writes it to `data_dir/admin.key` with mode `0600`.
 - **FR-AU-4 [v0.1]** Admin keys can create, list and revoke keys and see all sandboxes. Non-admin keys see and operate only on resources they created.
 - **FR-AU-5 [v0.1]** CLI `arcana keys create|list|revoke` works directly against the local database (for operators on the host).
-- **FR-AU-6 [v0.2]** Per-key rate limit on sandbox creation (`limits.create_per_minute_per_key`).
+- **FR-AU-6 [v0.2]** Per-key token-bucket rate limit on sandbox creation (`limits.create_per_minute_per_key`, default 30, range 1..10000). Authenticated creation attempts consume tokens before JSON decoding and quota reservation (after the outer request-size cap); other operations do not. The bucket refills continuously, with capacity equal to the per-minute rate. Denials return `rate_limited` and integer-seconds `Retry-After`. Bucket state is capped at 10000 keys; idle entries can be reclaimed after two minutes. At capacity, new keys fail closed with a bounded retry delay. State resets on daemon restart.
 
 ### 7.9 CLI (CL)
 
