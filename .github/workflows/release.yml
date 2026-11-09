@@ -23,6 +23,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          install-only: true
       - run: make check
       - uses: goreleaser/goreleaser-action@v6
         with:
