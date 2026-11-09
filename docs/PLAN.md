@@ -307,12 +307,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `docs/install.md`, `configuration.md`, `security.md`, `operations.md` (networking already existed). `TestEveryConfigKeyIsDocumented` walks the config struct's koanf tags and fails on any undocumented key. Markdown lint (`markdownlint-cli2`, config in `.markdownlint-cli2.yaml`) is clean locally and runs in CI. The config loader ignores unknown keys; documented as such rather than changed. README still describes allowlist networking, metrics and installers as later work; T2.11 updates it.
 
-### [~] T2.11 v0.2 release
+### [x] T2.11 v0.2 release
 - **Deps:** T2.1–T2.10
 - **Do:** Update README and CHANGELOG; tag `v0.2.0`.
 - **Verify:** `make check test-integration test-escape`; release workflow green.
 
-> Note: CI first failed in `TestAllowlist_ProxyAllowedDeniedAndIsolation` after `Reconcile`. Cause: Docker 28.0.4 (runner) ignores `MacAddress` on `NetworkConnect`, so the recreated proxy got a new MAC and sandbox neighbour caches went stale (Docker 29 locally honours it). Fixed by setting the stable MAC/IP in the container-create `NetworkingConfig` (with the `bridge` endpoint listed explicitly) and failing closed if Docker does not apply them. README/CHANGELOG ready; tag `v0.2.0` after CI is green.
+> Note: CI first failed in `TestAllowlist_ProxyAllowedDeniedAndIsolation` after `Reconcile`. Cause: Docker 28.0.4 (runner) ignores `MacAddress` on `NetworkConnect`, so the recreated proxy got a new MAC and sandbox neighbour caches went stale (Docker 29 locally honours it). Fixed by setting the stable MAC/IP in the container-create `NetworkingConfig` (with the `bridge` endpoint listed explicitly) and failing closed if Docker does not apply them. README/CHANGELOG updated. The first tag run failed because the release job lacked golangci-lint (fixed in 15a49e8); the unreleased tag was moved to that commit. Release `v0.2.0` published with archives, deb/rpm, checksums and install.sh; Release (including install-smoke), CI and Template images workflows green on the tag. Done.
 
 ---
 
