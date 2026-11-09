@@ -1,0 +1,47 @@
+[Unit]
+Description=Arcana sandbox orchestrator
+Documentation=https://github.com/brendatamaar/arcana
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+# Membership of the docker group is required for the Docker socket and is
+# root-equivalent on the host: keep the API on localhost or behind TLS.
+User=arcana
+Group=docker
+ExecStart=/usr/bin/arcana serve --config /etc/arcana/config.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+
+# Hardening compatible with talking to /var/run/docker.sock.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/arcana
+StateDirectory=arcana
+StateDirectoryMode=0700
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+# Used by GoReleaser (dockers_v2): the build context holds <os>/<arch>/arcana.
+FROM scratch
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/arcana /arcana
+USER 1000:1000
+ENTRYPOINT ["/arcana"]

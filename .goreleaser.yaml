@@ -1,0 +1,64 @@
+version: 2
+project_name: arcana
+
+builds:
+  - id: arcana
+    main: ./cmd/arcana
+    binary: arcana
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
+
+archives:
+  - id: arcana
+    formats: [tar.gz]
+    name_template: "arcana_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - src: deploy/config.example.yaml
+        dst: config.example.yaml
+      - src: deploy/systemd/arcana.service
+        dst: arcana.service
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+nfpms:
+  - id: packages
+    package_name: arcana
+    homepage: https://github.com/brendatamaar/arcana
+    description: Self-hosted sandbox orchestrator for AI agents
+    license: Apache-2.0
+    maintainer: Arcana maintainers <noreply@users.noreply.github.com>
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: deploy/config.example.yaml
+        dst: /etc/arcana/config.yaml
+        type: config|noreplace
+        file_info: {mode: 0640}
+      - src: deploy/systemd/arcana.service
+        dst: /lib/systemd/system/arcana.service
+        file_info: {mode: 0644}
+    scripts:
+      postinstall: deploy/packaging/postinstall.sh
+
+dockers_v2:
+  - id: image
+    images: [ghcr.io/brendatamaar/arcana]
+    tags: ["{{ .Version }}", latest]
+    dockerfile: deploy/Dockerfile.release
+    platforms: [linux/amd64, linux/arm64]
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+release:
+  prerelease: auto

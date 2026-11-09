@@ -292,11 +292,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added public REST/WebSocket attacks for ESC-15–19 with real runsc proxies, persisted denial audits, a controlled DNS upstream changing a public A answer to loopback, and a live peer listener verified on its own interface. Each attack checks API, peer and Docker health. CI runs the full v1/v2 suite. make check, tagged escape lint, and full serial integration/escape suites passed.
 
-### [ ] T2.9 Releases and installers
+### [x] T2.9 Releases and installers
 - **Deps:** T2.6
 - **Do:** `.goreleaser.yaml` (linux amd64/arm64, `CGO_ENABLED=0`, checksums, `.deb`/`.rpm` via nfpm, Arcana container image to GHCR, changelog); release workflow on tags; `scripts/install.sh` (POSIX sh, arch detection, checksum verification, config install, optional systemd unit, runs `doctor`); `deploy/systemd/arcana.service` with hardening directives compatible with Docker socket access. Test `install.sh` with `shellcheck` in CI.
 - **Acceptance:** a pre-release tag produces all artifacts; install script works on a fresh Ubuntu VM.
 - **Verify:** `goreleaser release --snapshot --clean` locally; `shellcheck scripts/install.sh`
+
+> Done: Added `.goreleaser.yaml` (linux amd64/arm64 static builds, checksums, deb/rpm, GHCR image via `dockers_v2`), tag release workflow, CI shellcheck and snapshot jobs, `scripts/install.sh` and a hardened `arcana.service`. Verified locally: snapshot release produced all artifacts; `shellcheck` clean; install.sh in a fresh Ubuntu 24.04 container installed and rejected a tampered archive; the deb installed the user/data dir. **Not verified:** a real pre-release tag, GHCR push, and `--systemd`/doctor on a real systemd VM; both run in the release workflow (`install-smoke`) on the first tag, which is T2.11.
 
 ### [ ] T2.10 Docs for self-hosters
 - **Deps:** T2.9

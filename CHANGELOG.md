@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add GoReleaser archives, checksums, deb/rpm packages and multi-arch GHCR image, a tag-triggered release workflow, a checksum-verifying `install.sh` and a hardened systemd unit.
+
 - Add public-API network escape tests for direct egress, forbidden proxy hosts, reserved addresses, DNS rebinding and peer isolation, with audit and health assertions.
 
 - Add per-key sandbox-creation token buckets, Retry-After responses and Go client retry-delay metadata without automatic retries.
