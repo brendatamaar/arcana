@@ -207,6 +207,10 @@ func diagnoseProxy(t *testing.T, ctx context.Context, service *orchestrator.Serv
 		out, _ := exec.CommandContext(ctx, "docker", args...).CombinedOutput() // #nosec G204 -- fixed diagnostic arguments
 		t.Logf("docker %v:\n%s", args, out)
 	}
+	for _, args := range [][]string{{"ip", "-br", "link"}, {"bridge", "fdb", "show"}, {"bridge", "link", "show"}, {"ip", "neigh"}} {
+		out, _ := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput() // #nosec G204 -- fixed diagnostic arguments
+		t.Logf("%v:\n%s", args, out)
+	}
 	names, _ := exec.CommandContext(ctx, "docker", "ps", "-a", "--filter", "name=-proxy", "--format", "{{.Names}}").Output() // #nosec G204 -- fixed diagnostic arguments
 	for _, name := range strings.Fields(string(names)) {
 		for _, args := range [][]string{
@@ -217,7 +221,7 @@ func diagnoseProxy(t *testing.T, ctx context.Context, service *orchestrator.Serv
 			t.Logf("docker %v:\n%s", args, out)
 		}
 	}
-	cmd := []string{"python", "-c", "import socket\nfor f in ('/proc/net/route','/proc/net/arp'):\n print(f);print(open(f).read())\nfor l in open('/proc/net/route').read().split('\\n')[1:]:\n p=l.split()\n if len(p)>2 and p[1]=='00000000':\n  g='.'.join(str(int(p[2][i:i+2],16)) for i in (6,4,2,0));print('gw',g)\n  s=socket.socket();s.settimeout(3)\n  try: s.connect((g,3128));print('connected 3128')\n  except OSError as e: print('connect',e)\nprint({k:v for k,v in __import__('os').environ.items() if 'PROXY' in k})"}
+	cmd := []string{"python", "-c", "import os,socket,time\nu=os.environ['HTTPS_PROXY'].split('//')[1].split(':')\nfor i in range(3):\n s=socket.socket();s.settimeout(3)\n try: s.connect((u[0],int(u[1])));print('connected',i)\n except OSError as e: print('connect',i,e)\n print(open('/proc/net/arp').read())\n time.sleep(1)"}
 	result, err := service.Exec(ctx, principal, id, orchestrator.ExecRequest{Cmd: &cmd})
 	t.Logf("sandbox diagnostics: %+v %v", result, err)
 }
