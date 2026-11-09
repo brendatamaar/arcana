@@ -19,10 +19,12 @@ import (
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/logging"
+	"github.com/brendatamaar/arcana/internal/metrics"
 	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
 	"github.com/brendatamaar/arcana/internal/store"
+	"golang.org/x/sync/errgroup"
 )
 
 func newServeCommand() *cobra.Command {
@@ -46,7 +48,20 @@ func newServeCommand() *cobra.Command {
 			return err
 		}
 		defer func() { _ = database.Close() }()
-		recorder, err := audit.New(audit.SQLBackend{Store: database}, audit.SystemClock{}, cfg.Audit.RetentionDays, 256, nil)
+		var lifecycle *orchestrator.Service
+		var recorder *audit.Writer
+		telemetry := metrics.New(database, cfg, func() map[string]int {
+			if lifecycle == nil {
+				return nil
+			}
+			return lifecycle.PoolAvailable()
+		}, func() audit.Stats {
+			if recorder == nil {
+				return audit.Stats{}
+			}
+			return recorder.Stats()
+		})
+		recorder, err = audit.New(audit.SQLBackend{Store: database}, audit.SystemClock{}, cfg.Audit.RetentionDays, 256, telemetry.ObserveAudit)
 		if err != nil {
 			return err
 		}
@@ -59,7 +74,7 @@ func newServeCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		driver, err := docker.New(docker.Config{Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
+		driver, err := docker.New(docker.Config{OnOrphan: telemetry.Orphan, Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
 		if err != nil {
 			return err
 		}
@@ -67,7 +82,7 @@ func newServeCommand() *cobra.Command {
 		if cfg.Runtime.Docker.OCIRuntime == "runc" {
 			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
 		}
-		lifecycle := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
+		lifecycle = orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
 		if err = lifecycle.Reconcile(ctx); err != nil {
 			return fmt.Errorf("startup reconciliation: %w", err)
 		}
@@ -105,7 +120,20 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "API listener is not loopback; use a TLS-terminating reverse proxy")
 		}
 		logger.InfoContext(ctx, "API listening", "address", listener.Addr().String())
-		serveErr := api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder}), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
+		metricsListener, err := net.Listen("tcp", cfg.Server.MetricsListen)
+		if err != nil {
+			return fmt.Errorf("listening for metrics: %w", err)
+		}
+		defer func() { _ = metricsListener.Close() }()
+		group, serveCtx := errgroup.WithContext(ctx)
+		timeout := time.Duration(cfg.Server.ShutdownTimeoutSeconds) * time.Second
+		group.Go(func() error {
+			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP}), timeout, logger)
+		})
+		group.Go(func() error {
+			return api.Serve(serveCtx, netpolicy.BoundListener(metricsListener, 32), telemetry.Handler(), timeout, logger)
+		})
+		serveErr := group.Wait()
 		cancelMaintenance()
 		<-maintenanceDone
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second)

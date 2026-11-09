@@ -270,11 +270,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added bounded asynchronous SQLite audit persistence, credential redaction, action/egress attribution, admin filters and timestamp/ID cursors, startup/daily pruning, local-key CLI recording and Go client support. File size metadata is produced inside the sandbox. Audit/API verification, make check, tagged security lint and full serial integration/escape suites passed (audit coverage 86.5%). Owner-approved ESC-03 cgroup usage/quota/throttling checks preserve the attack, CPU ceiling and peer-health bounds; no resource defaults changed.
 
-### [ ] T2.6 Metrics, dashboard and Compose
+### [x] T2.6 Metrics, dashboard and Compose
 - **Deps:** T2.3, T2.5 · **PRD:** §15, NFR-OPS-2
 - **Do:** `internal/metrics` with all PRD §15 metrics on `metrics_listen`; `deploy/grafana/arcana.json`; `deploy/compose/docker-compose.yml` with Arcana (host Docker socket mounted), Prometheus and Grafana with provisioning.
 - **Acceptance:** `docker compose up` shows populated dashboard after running a few execs.
 - **Verify:** `go test ./internal/metrics/...`; manual Compose check noted in PR.
+
+> Done: Added all PRD collectors plus audit-loss counters on the separately owned metrics listener, bounded route/outcome labels, live SQL/pool gauges and middleware preserving WebSocket/shutdown behavior. Added digest-pinned Prometheus/Grafana Compose provisioning and a temporary-stack smoke script; real exec samples reached Prometheus and Grafana datasource/dashboard queries. Metrics verification (87.8% coverage), make check, full integration and escape suites passed. Validation: docs/compose-validation.md.
 
 ### [ ] T2.7 Quotas and rate limiting
 - **Deps:** T2.3 · **PRD:** FR-AU-6
@@ -463,6 +465,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-08 — Persist audit metadata through a bounded asynchronous queue, with API-key redaction, timestamp/ID pagination and startup/daily retention — completes the approved T2.4/T2.5 audit sequence without blocking request paths; deletion sizes are observed inside the sandbox — PRD FR-AD-1/2, docs/audit.md.
 
 - 2026-11-09 — Owner approved ESC-03 host cgroup CPU accounting with the unchanged 1500 ms ceiling, explicit 0.25 CPU quota and throttling proof, and unchanged attack/peer checks — guest getrusage diverges from controller accounting under runsc; no resource policy or ceiling changed — docs/spikes/005-cpu-accounting.md, PRD §12.4.
+
+- 2026-11-09 — Use the approved Apache-2.0 Prometheus client_golang v1.25.0 with an isolated registry, bounded labels and a separate listener; pin monitoring images by digest — reproducible self-hosting with explicit lifecycle ownership and no credentials in labels — T2.6, docs/compose-validation.md.
 
 ## Open questions
 

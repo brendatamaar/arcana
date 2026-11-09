@@ -29,6 +29,9 @@ func (d *Driver) PruneOrphans(ctx context.Context, keep map[string]bool) error {
 		if _, err = d.client.VolumeRemove(ctx, volume.Name, client.VolumeRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
 			return fmt.Errorf("removing orphan volume: %w", err)
 		}
+		if d.config.OnOrphan != nil {
+			d.config.OnOrphan("volume")
+		}
 	}
 	networks, err := d.client.NetworkList(ctx, client.NetworkListOptions{Filters: filters})
 	if err != nil {
@@ -61,6 +64,9 @@ func (d *Driver) PruneOrphans(ctx context.Context, keep map[string]bool) error {
 		}
 		if _, err = d.client.NetworkRemove(ctx, network.ID, client.NetworkRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
 			return fmt.Errorf("removing orphan network: %w", err)
+		}
+		if d.config.OnOrphan != nil {
+			d.config.OnOrphan("network")
 		}
 	}
 	if d.config.Network == nil {

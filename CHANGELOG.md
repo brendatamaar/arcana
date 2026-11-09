@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add separate Prometheus metrics, provisioned Grafana panels and a loopback-only Compose stack with a repeatable live-data smoke check.
+
 - Add asynchronous metadata audit storage, owner-attributed egress events, admin filtering/pagination, retention pruning and Go client queries.
 
 - Add isolated allowlist networking, a bounded HTTP/CONNECT proxy with pinned public-IP dialing, explicit DNS, source policies, reconciliation and subnet diagnostics.

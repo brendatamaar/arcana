@@ -107,6 +107,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			if err = s.driver.Destroy(ctx, instance.ID); err != nil {
 				return err
 			}
+			s.audit.Record("reconcile.orphan", "", instance.SandboxID, map[string]any{"kind": "container"})
 		}
 	}
 	if pruner, ok := s.driver.(interface {

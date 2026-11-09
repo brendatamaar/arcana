@@ -1,0 +1,13 @@
+server:
+  listen: 0.0.0.0:7070
+  metrics_listen: 0.0.0.0:9090
+runtime:
+  docker:
+    oci_runtime: runsc
+    allow_insecure_runtime: false
+network:
+  proxy_image: arcana:local
+templates:
+  - name: base
+    image: arcana-base:local
+    warm_pool: 0

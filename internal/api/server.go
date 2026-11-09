@@ -19,7 +19,10 @@ import (
 )
 
 // Options supplies optional later-phase services.
-type Options struct{ Audit *audit.Writer }
+type Options struct {
+	Audit      *audit.Writer
+	Middleware func(http.Handler) http.Handler
+}
 
 // Server implements the generated API contract.
 type Server struct {
@@ -43,7 +46,11 @@ func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle 
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})
-	return &managedHandler{Handler: apierr.RequestIDs(server.recoverPanics(keys.Middleware(bodyLimits(handler, files)))), server: server}
+	stack := apierr.RequestIDs(server.recoverPanics(keys.Middleware(bodyLimits(handler, files))))
+	if len(options) > 0 && options[0].Middleware != nil {
+		stack = options[0].Middleware(stack)
+	}
+	return &managedHandler{Handler: stack, server: server}
 }
 
 type managedHandler struct {

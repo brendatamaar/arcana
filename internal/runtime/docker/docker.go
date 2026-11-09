@@ -48,6 +48,7 @@ type Config struct {
 	AllowInsecureRuntime bool
 	InstallID            string
 	HelperPath           string
+	OnOrphan             func(string)
 	Network              *NetworkConfig
 	Clock                Clock
 }
