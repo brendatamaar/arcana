@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add self-hoster docs (install, configuration reference, security model, operations), a test that every config key is documented, and Markdown lint in CI.
+
 - Add GoReleaser archives, checksums, deb/rpm packages and multi-arch GHCR image, a tag-triggered release workflow, a checksum-verifying `install.sh` and a hardened systemd unit.
 
 - Add public-API network escape tests for direct egress, forbidden proxy hosts, reserved addresses, DNS rebinding and peer isolation, with audit and health assertions.

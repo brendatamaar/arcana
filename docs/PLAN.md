@@ -300,10 +300,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `.goreleaser.yaml` (linux amd64/arm64 static builds, checksums, deb/rpm, GHCR image via `dockers_v2`), tag release workflow, CI shellcheck and snapshot jobs, `scripts/install.sh` and a hardened `arcana.service`. Verified locally: snapshot release produced all artifacts; `shellcheck` clean; install.sh in a fresh Ubuntu 24.04 container installed and rejected a tampered archive; the deb installed the user/data dir. **Not verified:** a real pre-release tag, GHCR push, and `--systemd`/doctor on a real systemd VM; both run in the release workflow (`install-smoke`) on the first tag, which is T2.11.
 
-### [ ] T2.10 Docs for self-hosters
+### [x] T2.10 Docs for self-hosters
 - **Deps:** T2.9
 - **Do:** `docs/` pages: install (each channel), configuration reference (generated from the config struct or hand-maintained and checked by a test that every key is documented), security model and limitations, networking, operations (upgrades, backups of `data_dir`, logs, metrics).
 - **Verify:** docs build (see T3.8) or Markdown lint in CI.
+
+> Done: Added `docs/install.md`, `configuration.md`, `security.md`, `operations.md` (networking already existed). `TestEveryConfigKeyIsDocumented` walks the config struct's koanf tags and fails on any undocumented key. Markdown lint (`markdownlint-cli2`, config in `.markdownlint-cli2.yaml`) is clean locally and runs in CI. The config loader ignores unknown keys; documented as such rather than changed. README still describes allowlist networking, metrics and installers as later work; T2.11 updates it.
 
 ### [ ] T2.11 v0.2 release
 - **Deps:** T2.1–T2.10

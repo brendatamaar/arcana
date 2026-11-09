@@ -24,6 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck scripts/install.sh deploy/packaging/postinstall.sh
+  markdown:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
   goreleaser:
     runs-on: ubuntu-24.04
     steps:

@@ -1,0 +1,9 @@
+config:
+  MD013: false
+  MD033: false
+globs:
+  - "docs/install.md"
+  - "docs/operations.md"
+  - "docs/security.md"
+  - "docs/configuration.md"
+  - "docs/networking.md"

@@ -8,8 +8,8 @@ and lifecycle independent; each proxy has a 256 MiB memory limit, 0.5 CPU and
 64 PIDs, in addition to the sandbox's own limits.
 
 Build the local proxy image with `make proxy-image` and configure
-`network.proxy_image: arcana:local`. Release packaging publishes the configured
-GHCR image in T2.9. DNS upstreams are explicit operator-configured IPs; Docker
+`network.proxy_image: arcana:local`. Releases publish the default
+GHCR image. DNS upstreams are explicit operator-configured IPs; Docker
 embedded DNS is not used for destination resolution. Choose a subnet pool
 disjoint from other host routes and Docker networks. Doctor checks overlap,
 and allocations are derived from Docker state, including after restart.
