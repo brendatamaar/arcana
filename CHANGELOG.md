@@ -4,6 +4,8 @@
 
 ## [0.2.0] - 2026-11-09
 
+- Fix allowlist proxies recreated on restart keeping a stable MAC/IP on Docker 28 by setting them at container creation, and fail closed if Docker does not apply them.
+
 - Add self-hoster docs (install, configuration reference, security model, operations), a test that every config key is documented, and Markdown lint in CI.
 
 - Add GoReleaser archives, checksums, deb/rpm packages and multi-arch GHCR image, a tag-triggered release workflow, a checksum-verifying `install.sh` and a hardened systemd unit.

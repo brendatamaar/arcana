@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,7 +95,6 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 		cmd := []string{"python", "-c", source}
 		result, err := service.Exec(ctx, principal, id, orchestrator.ExecRequest{Cmd: &cmd})
 		if err != nil || result.ExitCode != 0 {
-			diagnoseProxy(t, ctx, service, principal, id)
 			t.Fatalf("exec: %+v %v", result, err)
 		}
 		return result.Stdout
@@ -193,35 +191,4 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 	if recorder.Stats().Errors != 0 {
 		t.Fatal(recorder.Stats())
 	}
-}
-
-// diagnoseProxy logs Docker and in-sandbox network state when a proxy exec fails.
-// TEMPORARY: added to debug a CI-only post-reconcile timeout.
-func diagnoseProxy(t *testing.T, ctx context.Context, service *orchestrator.Service, principal auth.Principal, id string) {
-	t.Helper()
-	for _, args := range [][]string{
-		{"version", "--format", "{{.Server.Version}} api={{.Server.APIVersion}}"},
-		{"ps", "-a", "--format", "{{.Names}} {{.Status}} {{.Image}}"},
-		{"network", "ls", "--format", "{{.Name}} {{.Driver}} {{.Internal}}"},
-	} {
-		out, _ := exec.CommandContext(ctx, "docker", args...).CombinedOutput() // #nosec G204 -- fixed diagnostic arguments
-		t.Logf("docker %v:\n%s", args, out)
-	}
-	for _, args := range [][]string{{"ip", "-br", "link"}, {"bridge", "fdb", "show"}, {"bridge", "link", "show"}, {"ip", "neigh"}} {
-		out, _ := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput() // #nosec G204 -- fixed diagnostic arguments
-		t.Logf("%v:\n%s", args, out)
-	}
-	names, _ := exec.CommandContext(ctx, "docker", "ps", "-a", "--filter", "name=-proxy", "--format", "{{.Names}}").Output() // #nosec G204 -- fixed diagnostic arguments
-	for _, name := range strings.Fields(string(names)) {
-		for _, args := range [][]string{
-			{"inspect", "--format", "{{json .NetworkSettings.Networks}}", name},
-			{"logs", "--tail", "40", name},
-		} {
-			out, _ := exec.CommandContext(ctx, "docker", append(args[:1:1], append(args[1:len(args)-1:len(args)-1], name)...)...).CombinedOutput() // #nosec G204 -- fixed diagnostic arguments
-			t.Logf("docker %v:\n%s", args, out)
-		}
-	}
-	cmd := []string{"python", "-c", "import os,socket,time\nu=os.environ['HTTPS_PROXY'].split('//')[1].split(':')\nfor i in range(3):\n s=socket.socket();s.settimeout(3)\n try: s.connect((u[0],int(u[1])));print('connected',i)\n except OSError as e: print('connect',i,e)\n print(open('/proc/net/arp').read())\n time.sleep(1)"}
-	result, err := service.Exec(ctx, principal, id, orchestrator.ExecRequest{Cmd: &cmd})
-	t.Logf("sandbox diagnostics: %+v %v", result, err)
 }

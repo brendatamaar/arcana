@@ -117,16 +117,21 @@ func (d *Driver) startProxy(ctx context.Context, id string, subnet netip.Prefix,
 	pids := int64(64)
 	initProcess := true
 	options := client.ContainerCreateOptions{Name: sandboxName(id) + "-proxy", Config: &container.Config{Image: cfg.ProxyImage, User: "1000:1000", Entrypoint: []string{"/arcana"}, Cmd: []string{"proxy"}, Env: []string{"ARCANA_PROXY_TOKEN_HASH=" + hex.EncodeToString(hash[:]), "ARCANA_PROXY_DNS=" + strings.Join(cfg.ProxyDNS, ",")}, Labels: labels}, HostConfig: &container.HostConfig{Runtime: d.config.OCIRuntime, ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"}, Init: &initProcess, NetworkMode: "bridge", Tmpfs: map[string]string{"/tmp": "size=16m,nosuid,nodev", "/run/control": "size=4m,nosuid,nodev,uid=1000,gid=1000,mode=0700"}, Resources: container.Resources{Memory: 256 * megabyte, MemorySwap: 256 * megabyte, NanoCPUs: 500000000, PidsLimit: &pids}, LogConfig: container.LogConfig{Type: "none"}}}
+	// The stable MAC and IP must be set at creation: Docker 28 ignores the MAC on
+	// NetworkConnect, which left sandbox neighbour caches pointing at a dead MAC
+	// after a proxy was recreated. EndpointsConfig replaces the implicit NetworkMode
+	// attachment, so the outbound bridge is listed explicitly.
+	networkName := sandboxName(id) + "-net"
+	options.NetworkingConfig = &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{"bridge": {}, networkName: {MacAddress: proxyMAC(subnet), IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr(address(subnet, 3))}}}}
 	created, err := d.client.ContainerCreate(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-	_, err = d.client.NetworkConnect(ctx, sandboxName(id)+"-net", client.NetworkConnectOptions{Container: created.ID, EndpointConfig: &network.EndpointSettings{MacAddress: proxyMAC(subnet), IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr(address(subnet, 3))}}})
 	if err != nil {
 		return nil, err
 	}
 	if _, err = d.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
+	}
+	if err = d.verifyProxyEndpoint(ctx, created.ID, networkName, subnet); err != nil {
+		return nil, errors.Join(err, d.removeProxy(ctx, id))
 	}
 	state := &networkState{id: id, subnet: subnet, token: token}
 	policy := netpolicy.Policy{SandboxID: id, Source: address(subnet, 2), Allow: allow}
@@ -286,4 +291,17 @@ func (d *Driver) drainOne(ctx context.Context, state *networkState) error {
 func proxyMAC(subnet netip.Prefix) network.HardwareAddr {
 	ip := netip.MustParseAddr(address(subnet, 3)).As4()
 	return network.HardwareAddr{2, 66, ip[0], ip[1], ip[2], ip[3]}
+}
+
+// verifyProxyEndpoint fails closed unless Docker applied the stable MAC and IP.
+func (d *Driver) verifyProxyEndpoint(ctx context.Context, containerID, networkName string, subnet netip.Prefix) error {
+	found, err := d.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return err
+	}
+	endpoint := found.Container.NetworkSettings.Networks[networkName]
+	if endpoint == nil || !bytes.Equal(endpoint.MacAddress, proxyMAC(subnet)) || endpoint.IPAddress.String() != address(subnet, 3) {
+		return errors.New("docker did not apply the stable proxy MAC and IP")
+	}
+	return nil
 }

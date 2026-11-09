@@ -307,12 +307,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `docs/install.md`, `configuration.md`, `security.md`, `operations.md` (networking already existed). `TestEveryConfigKeyIsDocumented` walks the config struct's koanf tags and fails on any undocumented key. Markdown lint (`markdownlint-cli2`, config in `.markdownlint-cli2.yaml`) is clean locally and runs in CI. The config loader ignores unknown keys; documented as such rather than changed. README still describes allowlist networking, metrics and installers as later work; T2.11 updates it.
 
-### [!] T2.11 v0.2 release
+### [~] T2.11 v0.2 release
 - **Deps:** T2.1–T2.10
 - **Do:** Update README and CHANGELOG; tag `v0.2.0`.
 - **Verify:** `make check test-integration test-escape`; release workflow green.
 
-> Blocked: README and CHANGELOG are ready and `ARCANA_REQUIRE_RUNSC=1 make check test-integration test-escape` passes locally (Docker 29.8.1, kernel 6.8), but CI run 42583672800 (commit bb16d67) fails twice, reproducibly, in the `security` job: `TestAllowlist_ProxyAllowedDeniedAndIsolation` at test/integration/allowlist_test.go:123, where the sandbox's HTTPS connect to the proxy times out right after `service.Reconcile` recreates it (runner: Docker 28.0.4, kernel 7.0 azure). This is the first CI run to include any Phase 2 network test. `v0.2.0` is NOT tagged. Next: diagnose the post-reconcile proxy connectivity on the runner (suspects: Docker 28 vs 29 network/MAC handling, proxy readiness after recreation).
+> Note: CI first failed in `TestAllowlist_ProxyAllowedDeniedAndIsolation` after `Reconcile`. Cause: Docker 28.0.4 (runner) ignores `MacAddress` on `NetworkConnect`, so the recreated proxy got a new MAC and sandbox neighbour caches went stale (Docker 29 locally honours it). Fixed by setting the stable MAC/IP in the container-create `NetworkingConfig` (with the `bridge` endpoint listed explicitly) and failing closed if Docker does not apply them. README/CHANGELOG ready; tag `v0.2.0` after CI is green.
 
 ---
 
