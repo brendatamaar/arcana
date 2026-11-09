@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 )
@@ -411,5 +412,40 @@ type TemplateList = gen.TemplateList
 func (c *Client) ListTemplates(ctx context.Context) (TemplateList, error) {
 	var out TemplateList
 	err := c.json(ctx, "GET", "/templates", nil, nil, &out)
+	return out, err
+}
+
+// AuditEvent is metadata from the admin-only audit log.
+type AuditEvent = gen.AuditEvent
+
+// AuditList is one chronological audit page.
+type AuditList = gen.AuditList
+
+// AuditOptions selects bounded filters and pagination.
+type AuditOptions struct {
+	SandboxID, KeyID, Action, Cursor string
+	Since, Until                     time.Time
+	Limit                            int64
+}
+
+// ListAudit queries audit metadata; non-admin keys receive forbidden.
+func (c *Client) ListAudit(ctx context.Context, options AuditOptions) (AuditList, error) {
+	query := url.Values{}
+	for key, value := range map[string]string{"sandbox_id": options.SandboxID, "key_id": options.KeyID, "action": options.Action, "cursor": options.Cursor} {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	if !options.Since.IsZero() {
+		query.Set("since", options.Since.Format(time.RFC3339Nano))
+	}
+	if !options.Until.IsZero() {
+		query.Set("until", options.Until.Format(time.RFC3339Nano))
+	}
+	if options.Limit != 0 {
+		query.Set("limit", strconv.FormatInt(options.Limit, 10))
+	}
+	var out AuditList
+	err := c.json(ctx, "GET", "/audit", query, nil, &out)
 	return out, err
 }

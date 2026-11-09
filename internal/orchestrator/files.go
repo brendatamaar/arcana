@@ -116,7 +116,21 @@ func (s *Service) WriteFile(ctx context.Context, p auth.Principal, id, filename 
 	if err != nil {
 		return err
 	}
+	var count *countedInput
+	if input != nil {
+		count = &countedInput{Reader: input, closer: input}
+		input = count
+	}
 	_, err = s.fileExec(ctx, p, id, s.fileArgs("write", clean, s.cfg.Limits.Files.MaxFileBytes), input, s.cfg.Limits.Files.MaxFileBytes, io.Discard, 4096)
+	if err == nil {
+		var size int64
+		if count != nil {
+			count.mu.Lock()
+			size = count.count
+			count.mu.Unlock()
+		}
+		s.audit.Record("file.written", p.ID, id, map[string]any{"path": clean, "size_bytes": size})
+	}
 	return err
 }
 
@@ -147,7 +161,20 @@ func (s *Service) DeleteFile(ctx context.Context, p auth.Principal, id, filename
 	if recursive {
 		args = append(args, "--recursive")
 	}
-	_, err = s.fileExec(ctx, p, id, args, nil, 0, io.Discard, 4096)
+	if s.audit == nil {
+		_, err = s.fileExec(ctx, p, id, args, nil, 0, io.Discard, 4096)
+		return err
+	}
+	args = append(args, "--metadata")
+	var metadata bytes.Buffer
+	_, err = s.fileExec(ctx, p, id, args, nil, 0, &metadata, 4096)
+	if err == nil {
+		var header protocol.FileHeader
+		if json.Unmarshal(metadata.Bytes(), &header) != nil {
+			return ErrRuntime
+		}
+		s.audit.Record("file.deleted", p.ID, id, map[string]any{"path": clean, "size_bytes": header.SizeBytes, "recursive": recursive})
+	}
 	return err
 }
 
@@ -203,7 +230,21 @@ func (s *Service) UploadArchive(ctx context.Context, p auth.Principal, id, filen
 		return err
 	}
 	args := []string{"/bin/tar", "-xzf", "-", "--no-same-owner", "--no-same-permissions", "-C", clean}
+	var count *countedInput
+	if input != nil {
+		count = &countedInput{Reader: input, closer: input}
+		input = count
+	}
 	_, err = s.fileExec(ctx, p, id, args, input, s.cfg.Limits.Files.MaxArchiveBytes, io.Discard, 4096)
+	if err == nil {
+		var size int64
+		if count != nil {
+			count.mu.Lock()
+			size = count.count
+			count.mu.Unlock()
+		}
+		s.audit.Record("archive.uploaded", p.ID, id, map[string]any{"path": clean, "size_bytes": size})
+	}
 	return err
 }
 

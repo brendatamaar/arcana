@@ -208,8 +208,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	canonical, hostErr := Host(host)
-	if port == "80" || port == "443" {
-		event.Port = port
+	if number, err := strconv.ParseUint(port, 10, 16); err == nil && number > 0 {
+		event.Port = strconv.FormatUint(number, 10)
 	}
 	if hostErr != nil {
 		if ip, err := netip.ParseAddr(host); err == nil {

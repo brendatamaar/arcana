@@ -20,6 +20,15 @@ type ApiKey struct {
 	RevokedAt  sql.NullTime
 }
 
+type AuditEvent struct {
+	ID        string
+	Ts        time.Time
+	KeyID     string
+	SandboxID string
+	Action    string
+	Details   string
+}
+
 type Exec struct {
 	ID          string
 	SandboxID   string

@@ -139,7 +139,7 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 - **FR-NW-4 [v0.2]** SSRF protection: after DNS resolution the proxy rejects private, loopback, link-local (including `169.254.169.254`), multicast and unique-local addresses, and connects to the already-resolved IP to prevent DNS rebinding.
 - **FR-NW-5 [v0.2]** Per-sandbox networks get subnets from Arcana's own pool (`network.subnet_pool`, `network.subnet_prefix`) to avoid exhausting Docker's default address pools.
 - **FR-NW-6 [v0.2]** Allowlist presets per ecosystem (python, node, go) defined in config; requests can combine presets and explicit hostnames, capped by `network.max_allow_entries`.
-- **FR-NW-7 [v0.2]** Every proxy decision (allow or deny, host, port, bytes, sandbox ID) is written to the audit log. Owner-approved sequencing: T2.4 emits bounded decision events with overflow counts; T2.5 wires durable audit storage and completes this requirement.
+- **FR-NW-7 [v0.2]** Every proxy decision (allow or deny, host, port, bytes, sandbox ID) is written to the audit log. Owner-approved sequencing: T2.4 emits bounded decision events with overflow counts; T2.5 connects them to SQLite audit storage. Both queues count overflow; storage errors are counted without blocking requests.
 - **FR-NW-8** Mode `open` (unrestricted egress) is **not supported** in any release. This is deliberate.
 
 ### 7.6 Templates (TP)
@@ -194,7 +194,7 @@ Doctor runs independent checks with a 90-second diagnostic budget and a 30-secon
 ### 7.11 Audit (AD)
 
 - **FR-AD-1 [v0.2]** Audit events: key created or revoked, sandbox created or destroyed (with reason), exec started (argv or shell string, cwd), file written or deleted (path, size), archive uploaded, snapshot created, egress decision.
-- **FR-AD-2 [v0.2]** Stored in SQLite, queryable by admin keys via `GET /v1/audit` (filter by sandbox, key, action, time range), pruned after `audit.retention_days`.
+- **FR-AD-2 [v0.2]** Stored in SQLite, queryable by admin keys via `GET /v1/audit` (filter by sandbox, key, action, time range), pruned after `audit.retention_days`. The writer has a 256-event queue, 128 KiB metadata cap and counted overflow/storage failures. Pruning runs at startup and daily. API-key-shaped credentials are redacted even in explicit command metadata. Pagination uses timestamp/ID cursors. File deletion records the sandbox-local entry size observed before removal (symlinks are not followed; directory sizes are not recursive totals).
 
 ### 7.12 MCP server (MC)
 
@@ -653,7 +653,7 @@ Located in `test/escape`, run with `make test-escape` and in CI. Each test asser
 | ESC-23 | Cross-origin request to `/v1/events` and an exec output stream carrying a session cookie | Rejected | v0.3 |
 | ESC-24 | Exec output containing `<script>`, HTML and ANSI escape tricks shown in the log viewer | Rendered as inert text (frontend test) | v0.3 |
 
-The v0.1 escape suite drives attacks through public REST/WebSocket endpoints under runsc and verifies Arcana, a peer sandbox and Docker host health after every attack. Its test-only image contains a root-owned setuid probe, but all sandbox execution retains UID 1000 and production hardening. PID containment is proven by the test container's read-only cgroup `pids.events` counter without OOM kills, rather than by errno alone (runsc may report ENOMEM on PID denial). CPU peer latency is measured only after the spin probe signals it has started. Standalone security runs explicitly skip when runsc is unavailable; CI sets `ARCANA_REQUIRE_RUNSC=1` and fails instead. These kernel-counter reads never open workspace/volume files on the host.
+The v0.1 escape suite drives attacks through public REST/WebSocket endpoints under runsc and verifies Arcana, a peer sandbox and Docker host health after every attack. Its test-only image contains a root-owned setuid probe, but all sandbox execution retains UID 1000 and production hardening. PID containment is proven by the test container's read-only cgroup `pids.events` counter without OOM kills, rather than by errno alone (runsc may report ENOMEM on PID denial). CPU peer latency is measured only after the spin probe signals it has started. ESC-03 verifies the 0.25 CPU controller configuration, increasing throttling counters and the unchanged 1500 ms CPU ceiling using host cgroup usage; guest getrusage remains diagnostic because its runtime accounting differs. Standalone security runs explicitly skip when runsc is unavailable; CI sets `ARCANA_REQUIRE_RUNSC=1` and fails instead. These kernel-counter reads never open workspace/volume files on the host.
 
 ### 12.5 Known limitations (documented honestly)
 

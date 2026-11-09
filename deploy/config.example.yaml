@@ -82,8 +82,8 @@ templates:
 #   max_total_bytes: 10737418240
 #   max_fork: 10
 # 
-# audit:                            # v0.2
-#   retention_days: 30
+audit:
+  retention_days: 30
 # 
 # ui:                               # v0.3
 #   enabled: true

@@ -36,6 +36,7 @@ func fileCommand(args []string, stdin io.Reader, stdout io.Writer) (int, error) 
 	limit := flags.Int64("max-bytes", 52428800, "transfer limit")
 	depth := flags.Int("depth", 1, "directory depth")
 	recursive := flags.Bool("recursive", false, "remove directories recursively")
+	metadata := flags.Bool("metadata", false, "return removed entry metadata")
 	directory := flags.Bool("directory", false, "require a directory")
 	var roots rootFlags
 	flags.Var(&roots, "root", "allowed root")
@@ -57,10 +58,20 @@ func fileCommand(args []string, stdin io.Reader, stdout io.Writer) (int, error) 
 	case "ls":
 		err = listSandboxFiles(clean, roots, *depth, stdout)
 	case "remove":
+		var size int64
+		if *metadata {
+			info, statErr := os.Lstat(clean)
+			if statErr == nil {
+				size = info.Size()
+			}
+		} // #nosec G703 -- sandbox-only validated path; do not follow links.
 		if *recursive {
 			err = os.RemoveAll(clean) // #nosec G703 -- shared lexical validator checked allowed roots; runs only in sandbox namespace
 		} else {
 			err = os.Remove(clean) // #nosec G703 -- shared lexical validator checked allowed roots; runs only in sandbox namespace
+		}
+		if err == nil && *metadata {
+			err = json.NewEncoder(stdout).Encode(protocol.FileHeader{SizeBytes: size})
 		}
 	case "mkdir":
 		err = os.MkdirAll(clean, 0o755) // #nosec G301 G703 -- validated sandbox path; directories must be accessible to UID 1000 tools

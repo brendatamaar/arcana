@@ -112,3 +112,19 @@ func TestProxy_MalformedAuthorityNeverRecordsCredentials(t *testing.T) {
 		t.Fatal(w.Code, event)
 	}
 }
+
+func TestProxy_DeniedNumericPortIsAudited(t *testing.T) {
+	p := NewProxy(resolverStub{}, "secret")
+	if err := p.SetPolicy(Policy{SandboxID: "sandbox", Source: "10.200.0.2", Allow: []string{"example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("CONNECT", "http://example.com", nil)
+	r.Host = "example.com:22"
+	r.RemoteAddr = "10.200.0.2:123"
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, r)
+	event := <-p.events
+	if w.Code != 403 || event.Allowed || event.Port != "22" {
+		t.Fatal(w.Code, event)
+	}
+}

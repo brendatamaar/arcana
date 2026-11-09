@@ -108,3 +108,23 @@ func TestFiles_ListDepthEntryCapAndInvalidInputs(t *testing.T) {
 		t.Fatal("unbounded or partial listing", code, err)
 	}
 }
+
+func TestFiles_RemoveMetadataContainsSizeOnly(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "probe")
+	if err := os.WriteFile(path, []byte("private file contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	code, err := fileCommand([]string{"remove", "--root", root, "--path", path, "--metadata"}, bytes.NewReader(nil), &output)
+	var header protocol.FileHeader
+	if err != nil || code != 0 || json.Unmarshal(output.Bytes(), &header) != nil || header.SizeBytes != 21 {
+		t.Fatal(code, err, output.String())
+	}
+	if bytes.Contains(output.Bytes(), []byte("private")) {
+		t.Fatal("contents in metadata")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("file was not removed", err)
+	}
+}

@@ -4,11 +4,14 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/helper"
@@ -31,12 +34,26 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 			t.Error(err)
 		}
 	}()
+	recorder, err := audit.New(audit.SQLBackend{Store: database}, audit.SystemClock{}, 30, 256, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		closeCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		if err := recorder.Close(closeCtx); err != nil {
+			t.Error(err)
+		}
+	}()
 	path, err := helper.Install(ctx, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var events []netpolicy.Decision
-	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: "runsc", InstallID: database.InstallID, HelperPath: path, Network: &dockerruntime.NetworkConfig{SubnetPool: "10.201.0.0/16", SubnetPrefix: 28, ProxyImage: "arcana:local", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, DataDir: dir, OnDecision: func(event netpolicy.Decision) { events = append(events, event) }}})
+	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: "runsc", InstallID: database.InstallID, HelperPath: path, Network: &dockerruntime.NetworkConfig{SubnetPool: "10.201.0.0/16", SubnetPrefix: 28, ProxyImage: "arcana:local", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, DataDir: dir, OnDecision: func(event netpolicy.Decision) {
+		events = append(events, event)
+		recorder.Record("egress.decision", "", event.SandboxID, event)
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +68,7 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 	for _, name := range []string{"python", "node", "go"} {
 		cfg.Templates = append(cfg.Templates, config.Template{Name: name, Image: "arcana-" + name + ":local", NetworkPreset: name})
 	}
-	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
+	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
 	defer func() {
 		cleanup, done := context.WithTimeout(context.Background(), 20*time.Second)
 		defer done()
@@ -59,7 +76,7 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	keys := auth.New(database, auth.SystemClock{})
+	keys := auth.New(database, auth.SystemClock{}, recorder)
 	owner, _, err := keys.Create(ctx, "network-test", false)
 	if err != nil {
 		t.Fatal(err)
@@ -128,4 +145,50 @@ func TestAllowlist_ProxyAllowedDeniedAndIsolation(t *testing.T) {
 		}
 	}
 
+	content := "private-file-content"
+	if err = service.WriteFile(ctx, principal, row.ID, "/workspace/audit-probe", io.NopCloser(strings.NewReader(content))); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.DeleteFile(ctx, principal, row.ID, "/workspace/audit-probe", false); err != nil {
+		t.Fatal(err)
+	}
+	recorder.Record("test.barrier", owner.ID, row.ID, nil)
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		page, err := recorder.List(ctx, audit.Filter{Action: "test.barrier"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) == 1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+	for _, action := range []string{"file.written", "file.deleted", "egress.decision"} {
+		page, err := recorder.List(ctx, audit.Filter{Action: action, KeyID: owner.ID, SandboxID: row.ID})
+		if err != nil || len(page.Items) == 0 {
+			t.Fatal(action, page, err)
+		}
+		for _, event := range page.Items {
+			if strings.Contains(string(event.Details), content) {
+				t.Fatal("file contents persisted")
+			}
+			if action != "egress.decision" {
+				var details struct {
+					Size int64 `json:"size_bytes"`
+				}
+				if json.Unmarshal(event.Details, &details) != nil || details.Size != int64(len(content)) {
+					t.Fatal("incorrect file size metadata", string(event.Details))
+				}
+			}
+		}
+	}
+	if recorder.Stats().Errors != 0 {
+		t.Fatal(recorder.Stats())
+	}
 }

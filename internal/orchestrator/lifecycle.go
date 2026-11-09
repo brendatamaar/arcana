@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/ids"
@@ -60,6 +61,7 @@ func (SystemClock) NewTimer(d time.Duration) Timer { return systemTimer{time.New
 
 // Service owns persistence and runtime effects; reservations are atomic in SQLite.
 type Service struct {
+	audit       *audit.Writer
 	poolMu      sync.Mutex
 	poolFillMu  sync.Mutex
 	pool        map[string][]runtime.Instance
@@ -73,7 +75,7 @@ type Service struct {
 }
 
 // New constructs an orchestrator with independent operator configuration.
-func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock Clock) *Service {
+func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock Clock, writers ...*audit.Writer) *Service {
 	cfg.Network.ProxyDNS = slices.Clone(cfg.Network.ProxyDNS)
 	cfg.Network.Presets = maps.Clone(cfg.Network.Presets)
 	for name, hosts := range cfg.Network.Presets {
@@ -84,7 +86,11 @@ func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock 
 		cfg.Templates[i].Env = maps.Clone(cfg.Templates[i].Env)
 	}
 	cfg.Limits.Files.AllowedRoots = slices.Clone(cfg.Limits.Files.AllowedRoots)
-	return &Service{store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int), pool: make(map[string][]runtime.Instance)}
+	var recorder *audit.Writer
+	if len(writers) > 0 {
+		recorder = writers[0]
+	}
+	return &Service{audit: recorder, store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int), pool: make(map[string][]runtime.Instance)}
 }
 
 // Create reserves quota before starting the instance and persists every outcome.
@@ -229,6 +235,15 @@ func (s *Service) transition(ctx context.Context, row db.Sandbox, event Event, r
 	}
 	if err = tx.Commit(); err != nil {
 		return db.Sandbox{}, err
+	}
+	actor := row.OwnerKeyID
+	if principal, ok := auth.FromContext(ctx); ok {
+		actor = principal.ID
+	}
+	if next == Running {
+		s.audit.Record("sandbox.created", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source, "duration_seconds": max(0, s.clock.Now().Sub(row.CreatedAt).Seconds())})
+	} else if terminal(next) {
+		s.audit.Record("sandbox.destroyed", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "reason": reason})
 	}
 	return row, nil
 }

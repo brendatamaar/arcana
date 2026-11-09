@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/store"
@@ -71,5 +75,12 @@ func withKeys(cmd *cobra.Command, run func(*auth.Service) error) error {
 		return err
 	}
 	defer func() { _ = database.Close() }()
-	return run(auth.New(database, auth.SystemClock{}))
+	recorder, err := audit.New(audit.SQLBackend{Store: database}, audit.SystemClock{}, cfg.Audit.RetentionDays, 256, nil)
+	if err != nil {
+		return err
+	}
+	result := run(auth.New(database, auth.SystemClock{}, recorder))
+	closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return errors.Join(result, recorder.Close(closeCtx))
 }

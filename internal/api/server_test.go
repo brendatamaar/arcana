@@ -65,7 +65,7 @@ func TestContract_Validates(t *testing.T) {
 	if err = document.Validate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if document.Paths.Len() != 12 {
+	if document.Paths.Len() != 13 {
 		t.Fatalf("unexpected endpoint path count: %d", document.Paths.Len())
 	}
 }

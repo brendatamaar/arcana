@@ -7,6 +7,38 @@ components:
             $ref: '#/components/schemas/Error'
       description: API error
   schemas:
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, ts, key_id, sandbox_id, action, details]
+      properties:
+        id:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        key_id:
+          type: string
+        sandbox_id:
+          type: string
+        action:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    AuditList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        next_cursor:
+          type: string
+          nullable: true
     Template:
       type: object
       additionalProperties: false
@@ -428,6 +460,44 @@ info:
   version: 0.1.0
 openapi: 3.0.3
 paths:
+  /v1/audit:
+    get:
+      operationId: listAudit
+      summary: Query audit events (admin only)
+      parameters:
+        - in: query
+          name: sandbox_id
+          schema: {type: string, maxLength: 128}
+        - in: query
+          name: key_id
+          schema: {type: string, maxLength: 128}
+        - in: query
+          name: action
+          schema: {type: string, maxLength: 128}
+        - in: query
+          name: since
+          schema: {type: string, format: date-time}
+        - in: query
+          name: until
+          schema: {type: string, format: date-time}
+        - in: query
+          name: cursor
+          schema: {type: string, maxLength: 512}
+        - in: query
+          name: limit
+          schema: {type: integer, format: int64, minimum: 1, maximum: 1000}
+      responses:
+        '200':
+          description: Filtered audit page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditList'}
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
   /v1/templates:
     get:
       operationId: listTemplates

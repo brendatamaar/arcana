@@ -107,3 +107,43 @@ func monitorPids(t *testing.T, f *fixture) func() (uint64, uint64) {
 	}()
 	return func() (uint64, uint64) { cancel(); <-done; return maxPids.Load() - before, maxOOM.Load() - beforeOOM }
 }
+
+// monitorCPU uses host controller counters because guest getrusage includes
+// runtime-specific accounting that is not equivalent to physical CPU use.
+func monitorCPU(t *testing.T, f *fixture) func() {
+	t.Helper()
+	path := cgroupPath(t, f)
+	nano, err := strconv.ParseInt(docker(f.ctx, t, "inspect", "--format", "{{.HostConfig.NanoCpus}}", "sbx-"+f.target), 10, 64)
+	if err != nil || nano != 250000000 {
+		t.Fatal("unexpected CPU allocation", nano, err)
+	}
+	fields := strings.Fields(kernelFile(t, filepath.Join(path, "cpu.max")))
+	if len(fields) != 2 {
+		t.Fatal("invalid cpu.max")
+	}
+	quota, qerr := strconv.ParseUint(fields[0], 10, 64)
+	period, perr := strconv.ParseUint(fields[1], 10, 64)
+	if qerr != nil || perr != nil || period == 0 || period > 1000000 || quota != period/4 || period%4 != 0 {
+		t.Fatal("CPU controller quota differs from 0.25 CPU", fields)
+	}
+	before, err := readCounter(filepath.Join(path, "cpu.stat"), "usage_usec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	throttled, err := readCounter(filepath.Join(path, "cpu.stat"), "nr_throttled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		after, err := readCounter(filepath.Join(path, "cpu.stat"), "usage_usec")
+		if err != nil || after <= before || after-before > 1500000 {
+			t.Fatal("physical CPU ceiling exceeded", before, after, err)
+		}
+		count, err := readCounter(filepath.Join(path, "cpu.stat"), "nr_throttled")
+		if err != nil || count <= throttled {
+			t.Fatal("CPU throttling was not observed", throttled, count, err)
+		}
+		t.Logf("container CPU=%d us; throttled periods=%d", after-before, count-throttled)
+	}
+}

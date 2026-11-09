@@ -22,7 +22,7 @@ test-escape:
 	go test -race -tags=escape ./...
 
 lint:
-	golangci-lint run
+	golangci-lint run --allow-serial-runners
 
 generate:
 	go generate ./...

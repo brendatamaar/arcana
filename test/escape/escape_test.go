@@ -215,6 +215,7 @@ func TestEscapeV1_PublicAPI(t *testing.T) {
 	})
 	t.Run("ESC03", func(t *testing.T) {
 		f := newFixture(t, image, "tmpfs")
+		assertCPU := monitorCPU(t, f)
 		stream, err := f.api.ExecStream(f.ctx, f.target, client.StreamRequest{ExecRequest: client.ExecRequest{Cmd: []string{"/usr/local/bin/escape-probe", "cpu"}}})
 		if err != nil {
 			t.Fatal(err)
@@ -239,9 +240,11 @@ func TestEscapeV1_PublicAPI(t *testing.T) {
 			CPU  int64 `json:"cpu_ms"`
 			Wall int64 `json:"wall_ms"`
 		}
-		if readErr != nil || stderrErr != nil || waitErr != nil || result.ExitCode != 0 || json.Unmarshal(data, &timing) != nil || timing.CPU <= 0 || timing.CPU > 1500 || timing.Wall < 2500 {
+		if readErr != nil || stderrErr != nil || waitErr != nil || result.ExitCode != 0 || json.Unmarshal(data, &timing) != nil || timing.CPU <= 0 || timing.Wall < 2500 {
 			t.Fatal("CPU quota was not observed", result, timing)
 		}
+		assertCPU()
+		t.Logf("guest CPU diagnostic=%d ms; wall=%d ms", timing.CPU, timing.Wall)
 	})
 	t.Run("ESC04_tmpfs", func(t *testing.T) {
 		f := newFixture(t, image, "tmpfs")

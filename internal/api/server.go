@@ -12,13 +12,18 @@ import (
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 	"github.com/brendatamaar/arcana/internal/apierr"
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 )
 
-// Server implements the generated v0.1 API contract.
+// Options supplies optional later-phase services.
+type Options struct{ Audit *audit.Writer }
+
+// Server implements the generated API contract.
 type Server struct {
+	audit     *audit.Writer
 	keys      *auth.Service
 	logger    *slog.Logger
 	lifecycle *orchestrator.Service
@@ -29,8 +34,12 @@ type Server struct {
 }
 
 // New builds the middleware stack and generated standard-library router.
-func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle *orchestrator.Service) http.Handler {
-	server := &Server{keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
+func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle *orchestrator.Service, options ...Options) http.Handler {
+	var recorder *audit.Writer
+	if len(options) > 0 {
+		recorder = options[0].Audit
+	}
+	server := &Server{audit: recorder, keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})

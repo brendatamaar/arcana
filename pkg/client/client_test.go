@@ -345,3 +345,21 @@ func TestListTemplates_ConfiguredDefaults(t *testing.T) {
 		t.Fatalf("%+v", list)
 	}
 }
+
+func TestListAudit_FilterEncoding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audit" || r.URL.Query().Get("action") != "file.written" || r.URL.Query().Get("cursor") != "cursor+value" || r.URL.Query().Get("limit") != "5" {
+			t.Error(r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[]}`)
+	}))
+	defer server.Close()
+	c, err := client.New(server.URL, "key", client.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.ListAudit(context.Background(), client.AuditOptions{Action: "file.written", Cursor: "cursor+value", Limit: 5}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -52,6 +52,9 @@ func (s *Service) Bootstrap(ctx context.Context, dataDir string, out io.Writer) 
 			_, err = queries.CreateKey(ctx, params)
 			if err == nil {
 				err = tx.Commit()
+				if err == nil {
+					s.audit.Record("key.created", "", "", map[string]any{"key_id": params.ID, "name": params.Name, "is_admin": true, "bootstrap": true})
+				}
 			}
 			next = keyCommitted
 		case printAdminKey:

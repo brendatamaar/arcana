@@ -263,10 +263,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added config/API/CLI allowlists and presets, Docker-derived bounded subnet allocation, isolated per-sandbox runsc proxies, pinned public-IP HTTP/CONNECT forwarding, exec-bridged authenticated Unix control, bounded decision queues, startup restoration/orphan cleanup and subnet diagnostics. Live tests installed requests/lodash/Go modules, denied non-allowlisted/direct egress, preserved peer health and restored access after reconciliation. Network fixtures use separate ranges to keep the new overlap diagnostic meaningful. make proxy-image, task verification, make check and full integration passed. ESC-03 initially failed during concurrent package execution; it passed in isolation and the full escape suite passed with GOFLAGS=-p=1, with every attack and assertion unchanged. Owner-approved durable audit wiring follows in T2.5.
 
-### [ ] T2.5 Audit log
+### [x] T2.5 Audit log
 - **Deps:** T2.4 · **PRD:** FR-AD-1, FR-AD-2, FR-FS-6
 - **Do:** Migration for `audit_events`; async buffered writer (never blocks request path; drops with a counter metric if the buffer overflows); events from all listed actions; `GET /v1/audit` with filters and cursor pagination; daily pruning.
 - **Verify:** `go test ./internal/audit/... ./internal/api/...`
+
+> Done: Added bounded asynchronous SQLite audit persistence, credential redaction, action/egress attribution, admin filters and timestamp/ID cursors, startup/daily pruning, local-key CLI recording and Go client support. File size metadata is produced inside the sandbox. Audit/API verification, make check, tagged security lint and full serial integration/escape suites passed (audit coverage 86.5%). Owner-approved ESC-03 cgroup usage/quota/throttling checks preserve the attack, CPU ceiling and peer-health bounds; no resource defaults changed.
 
 ### [ ] T2.6 Metrics, dashboard and Compose
 - **Deps:** T2.3, T2.5 · **PRD:** §15, NFR-OPS-2
@@ -458,6 +460,10 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-08 — Use one isolated proxy per allowlist sandbox and exec-bridged private Unix control; preserve internal IP/MAC on recreation — keeps each complete runsc network set fixed, avoids host Unix-socket visibility assumptions and preserves healthy sandbox neighbour caches; owner-approved audit sequencing emits bounded events in T2.4 and persists them in T2.5 — PRD FR-NW-2/7, docs/networking.md.
 
+- 2026-11-08 — Persist audit metadata through a bounded asynchronous queue, with API-key redaction, timestamp/ID pagination and startup/daily retention — completes the approved T2.4/T2.5 audit sequence without blocking request paths; deletion sizes are observed inside the sandbox — PRD FR-AD-1/2, docs/audit.md.
+
+- 2026-11-09 — Owner approved ESC-03 host cgroup CPU accounting with the unchanged 1500 ms ceiling, explicit 0.25 CPU quota and throttling proof, and unchanged attack/peer checks — guest getrusage diverges from controller accounting under runsc; no resource policy or ceiling changed — docs/spikes/005-cpu-accounting.md, PRD §12.4.
+
 ## Open questions
 
 
@@ -475,3 +481,9 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-08 — Resolved: owner supplied Git author brendatamaar <brendatama10@gmail.com>; configured repository-local identity and resumed T2.1 commit.
 
 - 2026-11-08 — Resolved by owner approval: T2.4 may implement bounded proxy decision events, with durable audit storage/wiring deferred to T2.5 and FR-NW-7 considered complete only then? FR-NW-7 requires every proxy decision in the audit log, while T2.5 introduces that log and depends on T2.4. AGENTS requires stopping on document conflicts — blocking T2.4.
+
+- 2026-11-09 — Approve the proposed ESC-03 cgroup CPU accounting/throttling checks while retaining the attack, 1500 ms ceiling and peer-health assertions? The existing guest timing assertion repeatedly failed; controlled measurements differ from cgroup-backed CPU usage, but the failing suite run was not instrumented. No escape test was weakened — docs/spikes/005-cpu-accounting.md — blocking T2.5.
+
+- 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
+
+- 2026-11-09 — Resolved: approved cgroup-based ESC-03 checks passed in isolation and the full escape suite; T2.5 verification is complete.

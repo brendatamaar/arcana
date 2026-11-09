@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/store"
 	"github.com/brendatamaar/arcana/internal/store/db"
@@ -44,12 +45,19 @@ type Key struct {
 
 // Service owns local key operations.
 type Service struct {
+	audit *audit.Writer
 	store *store.Store
 	clock Clock
 }
 
 // New constructs a service with an explicit clock.
-func New(s *store.Store, clock Clock) *Service { return &Service{store: s, clock: clock} }
+func New(s *store.Store, clock Clock, writers ...*audit.Writer) *Service {
+	service := &Service{store: s, clock: clock}
+	if len(writers) > 0 {
+		service.audit = writers[0]
+	}
+	return service
+}
 
 // InvalidCredentials is returned for malformed, unknown and revoked keys.
 type InvalidCredentials struct{}
@@ -121,6 +129,8 @@ func (s *Service) Create(ctx context.Context, name string, admin bool) (Key, str
 	if err != nil {
 		return Key{}, "", fmt.Errorf("creating key: %w", err)
 	}
+	actor, _ := FromContext(ctx)
+	s.audit.Record("key.created", actor.ID, "", map[string]any{"key_id": row.ID, "name": row.Name, "is_admin": admin})
 	return display(row), raw, nil
 }
 
@@ -170,6 +180,8 @@ func (s *Service) Revoke(ctx context.Context, id string) error {
 	if _, err := s.store.Queries.RevokeKey(ctx, db.RevokeKeyParams{ID: id, RevokedAt: sql.NullTime{Time: s.clock.Now(), Valid: true}}); err != nil {
 		return fmt.Errorf("revoking key: %w", err)
 	}
+	actor, _ := FromContext(ctx)
+	s.audit.Record("key.revoked", actor.ID, "", map[string]any{"key_id": id})
 	return nil
 }
 

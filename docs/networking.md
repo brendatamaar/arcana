@@ -36,8 +36,8 @@ capabilities, no-new-privileges, bounded tmpfs and no Docker socket.
 
 Connections are capped at 128, tunnels at five minutes, HTTP uploads at 50 MiB
 and downloads at 64 MiB. Control connections are capped at 16. Metadata-only
-decisions use a 1024-entry queue with overflow counting; T2.5 connects this
-queue to durable audit storage. No headers, credentials, URLs or bodies are
+decisions use a 1024-entry queue with overflow counting; the audit writer connects this
+queue to SQLite storage. No headers, credentials, URLs or bodies are
 recorded. A restart recreates proxies, interrupting existing connections while
 preserving healthy sandboxes. Stable internal proxy IP/MAC addresses keep
 sandbox neighbour caches valid. Orphaned proxies and networks are removed

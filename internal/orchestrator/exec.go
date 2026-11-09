@@ -88,6 +88,7 @@ func (s *Service) executePlan(ctx context.Context, p auth.Principal, id string, 
 	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started}); err != nil {
 		return ExecResult{}, fmt.Errorf("recording exec start: %w", err)
 	}
+	s.audit.Record("exec.started", p.ID, id, map[string]any{"exec_id": execID, "command": json.RawMessage(plan.command), "is_shell": plan.shell, "cwd": plan.cwd})
 	return s.superviseExec(ctx, p, row, execID, started, plan, stream, files)
 }
 
@@ -210,6 +211,24 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 	if !maintenance {
 		_, activityErr = s.store.Queries.TouchSandbox(recordCtx, db.TouchSandboxParams{ID: row.ID, LastActivityAt: activity})
 	}
+	kind := "ok"
+	if result.ExitCode != 0 {
+		kind = "nonzero"
+	}
+	if outcome.err != nil || err != nil {
+		kind = "error"
+	}
+	if result.TimedOut {
+		kind = "timeout"
+	}
+	if result.Cancelled {
+		kind = "cancelled"
+	}
+	actor := row.OwnerKeyID
+	if principal, ok := auth.FromContext(ctx); ok {
+		actor = principal.ID
+	}
+	s.audit.Record("exec.ended", actor, row.ID, map[string]any{"exec_id": id, "template": row.Template, "result": kind, "duration_seconds": float64(result.DurationMS) / 1000})
 	if failure := errors.Join(outcome.err, err, activityErr, output.sinkErr); failure != nil {
 		return result, errors.Join(failure, ctx.Err())
 	}

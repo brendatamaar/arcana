@@ -35,6 +35,7 @@ type Config struct {
 	Workspace Workspace  `koanf:"workspace"`
 	Network   Network    `koanf:"network"`
 	Templates []Template `koanf:"templates"`
+	Audit     Audit      `koanf:"audit"`
 	Log       Log        `koanf:"log"`
 }
 
@@ -129,6 +130,11 @@ type Template struct {
 	Workdir       string            `koanf:"workdir"`
 }
 
+// Audit configures retention of metadata-only events.
+type Audit struct {
+	RetentionDays int `koanf:"retention_days"`
+}
+
 // Log selects structured logging output.
 type Log struct {
 	Level  string `koanf:"level"`
@@ -145,6 +151,7 @@ func Default() Config {
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
 		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
+		Audit:     Audit{30},
 		Log:       Log{"info", "json"},
 	}
 }
@@ -316,6 +323,9 @@ func (c Config) Validate() error {
 	}
 	if poolTarget > c.Limits.MaxSandboxes {
 		bad("templates", "combined warm_pool must not exceed limits.max_sandboxes")
+	}
+	if c.Audit.RetentionDays < 1 || c.Audit.RetentionDays > 3650 {
+		bad("audit.retention_days", "must be 1..3650")
 	}
 	if c.Log.Level != "debug" && c.Log.Level != "info" && c.Log.Level != "warn" && c.Log.Level != "error" {
 		bad("log.level", "must be debug, info, warn or error")

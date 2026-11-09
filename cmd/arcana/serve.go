@@ -14,10 +14,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/brendatamaar/arcana/internal/api"
+	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
 	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/logging"
+	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
 	"github.com/brendatamaar/arcana/internal/store"
@@ -44,11 +46,20 @@ func newServeCommand() *cobra.Command {
 			return err
 		}
 		defer func() { _ = database.Close() }()
+		recorder, err := audit.New(audit.SQLBackend{Store: database}, audit.SystemClock{}, cfg.Audit.RetentionDays, 256, nil)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second)
+			defer cancel()
+			_ = recorder.Close(closeCtx)
+		}()
 		helperPath, err := helper.Install(ctx, cfg.DataDir)
 		if err != nil {
 			return err
 		}
-		driver, err := docker.New(docker.Config{Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
+		driver, err := docker.New(docker.Config{Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
 		if err != nil {
 			return err
 		}
@@ -56,7 +67,7 @@ func newServeCommand() *cobra.Command {
 		if cfg.Runtime.Docker.OCIRuntime == "runc" {
 			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
 		}
-		lifecycle := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
+		lifecycle := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
 		if err = lifecycle.Reconcile(ctx); err != nil {
 			return fmt.Errorf("startup reconciliation: %w", err)
 		}
@@ -76,7 +87,7 @@ func newServeCommand() *cobra.Command {
 		maintenanceDone := make(chan struct{})
 		go func() { defer close(maintenanceDone); lifecycle.Maintain(maintenanceCtx, logger) }()
 		defer func() { cancelMaintenance(); <-maintenanceDone }()
-		keys := auth.New(database, auth.SystemClock{})
+		keys := auth.New(database, auth.SystemClock{}, recorder)
 		if err = keys.Bootstrap(ctx, cfg.DataDir, cmd.OutOrStdout()); err != nil {
 			return err
 		}
@@ -94,11 +105,11 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "API listener is not loopback; use a TLS-terminating reverse proxy")
 		}
 		logger.InfoContext(ctx, "API listening", "address", listener.Addr().String())
-		serveErr := api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
+		serveErr := api.Serve(ctx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder}), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second, logger)
 		cancelMaintenance()
 		<-maintenanceDone
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second)
 		defer cancelShutdown()
-		return errors.Join(serveErr, lifecycle.Shutdown(shutdownCtx))
+		return errors.Join(serveErr, driver.DrainDecisions(shutdownCtx), lifecycle.Shutdown(shutdownCtx))
 	}}
 }
