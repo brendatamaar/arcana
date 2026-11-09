@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add public-API network escape tests for direct egress, forbidden proxy hosts, reserved addresses, DNS rebinding and peer isolation, with audit and health assertions.
+
 - Add per-key sandbox-creation token buckets, Retry-After responses and Go client retry-delay metadata without automatic retries.
 
 - Add separate Prometheus metrics, provisioned Grafana panels and a loopback-only Compose stack with a repeatable live-data smoke check.

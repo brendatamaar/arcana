@@ -54,7 +54,7 @@ jobs:
             exit 1
           fi
       - run: make templates proxy-image
-      - name: Run integration and escape suites with runsc
+      - name: Run integration and escape suites v1/v2 (ESC-01 through ESC-20) with runsc
         shell: bash
         run: |
           set -o pipefail

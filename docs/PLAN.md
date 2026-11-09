@@ -285,10 +285,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added configurable per-key creation token buckets (default 30/min), continuous refill, bounded fail-closed 10000-key state with idle reclamation, rate_limited/Retry-After responses and Go client retry-delay metadata without mutation retries. Tests cover independent keys, refill/backwards clocks, concurrent admission, state bounds, auth precedence and no DB/runtime reservation on denial. Task verification, make check, full serial integration and escape suites passed. User-requested stopping point reached; T2.8 onward remains unstarted.
 
-### [ ] T2.8 Escape suite v2 (network)
+### [x] T2.8 Escape suite v2 (network)
 - **Deps:** T2.4 · **PRD:** §12.4 ESC-15…19
 - **Do:** Implement network escape tests; add to CI.
 - **Verify:** `make test-escape`
+
+> Done: Added public REST/WebSocket attacks for ESC-15–19 with real runsc proxies, persisted denial audits, a controlled DNS upstream changing a public A answer to loopback, and a live peer listener verified on its own interface. Each attack checks API, peer and Docker health. CI runs the full v1/v2 suite. make check, tagged escape lint, and full serial integration/escape suites passed.
 
 ### [ ] T2.9 Releases and installers
 - **Deps:** T2.6
