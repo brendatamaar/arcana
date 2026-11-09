@@ -3,10 +3,19 @@
 Self-hosted sandboxes for AI agents, written in Go. Arcana turns a Linux Docker
 host into an authenticated REST/WebSocket service for ephemeral, isolated work.
 
-v0.1 provides sandbox lifecycle, synchronous and streaming exec, binary file and
-archive transfers, CPU/memory/PID limits, volume or tmpfs workspaces, TTL/idle
-cleanup, crash reconciliation, API keys, a Go client, CLI, and host diagnostics.
-Sandbox networking defaults to `none`; isolation defaults to gVisor (`runsc`).
+v0.2 adds isolated allowlist networking through a per-sandbox egress proxy, warm
+pools, workspace-ready templates (base, Python, Node, Go), metadata-only audit
+events, Prometheus metrics with a Grafana stack, per-key creation rate limits,
+and release packaging (archives, deb/rpm, container image, installer and systemd
+unit). It builds on v0.1: sandbox lifecycle, synchronous and streaming exec,
+binary file and archive transfers, resource limits, volume or tmpfs workspaces,
+TTL/idle cleanup, crash reconciliation, API keys, a Go client, CLI, and host
+diagnostics. Sandbox networking defaults to `none`; isolation defaults to gVisor
+(`runsc`).
+
+Self-hosting guides: [install](docs/install.md), [configuration](docs/configuration.md),
+[security model](docs/security.md), [networking](docs/networking.md) and
+[operations](docs/operations.md).
 
 ## Security model
 
@@ -184,7 +193,8 @@ curl --fail-with-body "$ARCANA_URL/v1/sandboxes/$sandbox_id/exec" \
 
 The public [Go client](pkg/client) includes typed methods, errors, contexts,
 bounded transfer readers, and streaming exec controls with GoDoc examples.
-Use [config.example.yaml](deploy/config.example.yaml) for all v0.1 settings.
+See the [configuration reference](docs/configuration.md) and
+[config.example.yaml](deploy/config.example.yaml) for all settings.
 Environment overrides use `ARCANA_` and `__`, for example
 `ARCANA_SERVER__LISTEN=127.0.0.1:7071`.
 
@@ -202,14 +212,15 @@ Environment overrides use `ARCANA_` and `__`, for example
   failed security check on a host that runs hostile workloads.
 - Sandboxes are ephemeral. File/archive operations run inside them; failed archive
   extraction can leave partial sandbox files. No output content is stored in SQLite.
-- Snapshot/fork, allowlist networking, a warm pool, audit/metrics, MCP, other SDKs,
-  a dashboard and deployment installers are later-phase work. Planned snapshots
-  capture the workspace only, not running processes or the whole container.
+- Allowlist egress supports only ports 80/443 without TLS interception, and
+  `open` network mode does not exist.
+- Snapshot/fork, MCP, other SDKs and a dashboard are later-phase work. Planned
+  snapshots capture the workspace only, not running processes or the container.
 
 ## Development and validation
 
 ```bash
-CGO_ENABLED=0 make build VERSION=v0.1.0
+CGO_ENABLED=0 make build VERSION=v0.2.0
 make check
 ARCANA_REQUIRE_RUNSC=1 make test-integration test-escape
 ```

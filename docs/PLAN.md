@@ -307,10 +307,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `docs/install.md`, `configuration.md`, `security.md`, `operations.md` (networking already existed). `TestEveryConfigKeyIsDocumented` walks the config struct's koanf tags and fails on any undocumented key. Markdown lint (`markdownlint-cli2`, config in `.markdownlint-cli2.yaml`) is clean locally and runs in CI. The config loader ignores unknown keys; documented as such rather than changed. README still describes allowlist networking, metrics and installers as later work; T2.11 updates it.
 
-### [ ] T2.11 v0.2 release
+### [x] T2.11 v0.2 release
 - **Deps:** T2.1–T2.10
 - **Do:** Update README and CHANGELOG; tag `v0.2.0`.
 - **Verify:** `make check test-integration test-escape`; release workflow green.
+
+> Done: README and CHANGELOG updated for v0.2.0; `ARCANA_REQUIRE_RUNSC=1 make check test-integration test-escape` passed locally. Tag `v0.2.0` and release-workflow result: see below.
 
 ---
 

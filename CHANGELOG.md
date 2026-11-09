@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
 - Add self-hoster docs (install, configuration reference, security model, operations), a test that every config key is documented, and Markdown lint in CI.
 
 - Add GoReleaser archives, checksums, deb/rpm packages and multi-arch GHCR image, a tag-triggered release workflow, a checksum-verifying `install.sh` and a hardened systemd unit.
@@ -45,5 +47,6 @@
 - Successful HTTP file uploads being cancelled by a read deadline after EOF.
 - Cold-cache test fixture container-ID parsing when Docker prints image-pull progress to stderr.
 
-[Unreleased]: https://github.com/brendatamaar/arcana/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/brendatamaar/arcana/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/brendatamaar/arcana/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/brendatamaar/arcana/tree/v0.1.0
