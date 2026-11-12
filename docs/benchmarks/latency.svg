@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420" role="img" aria-label="Arcana latency by scenario">
+<style>text{font:12px sans-serif;fill:#222}.t{font:600 14px sans-serif}.g{stroke:#ddd}.p50{fill:#2a6fb0}.p95{fill:#9cc3e6}.tg{stroke:#c0392b;stroke-width:2}@media (prefers-color-scheme:dark){text{fill:#ddd}.g{stroke:#444}.p50{fill:#6aa9e6}.p95{fill:#2f5f8f}.tg{stroke:#ff7b6b}}</style>
+<text class="t" x="150" y="22">Latency (ms, log scale): p50 dark, p95 light, PRD target red</text>
+<text x="150" y="40">2 vCPU (AMD EPYC 7K62, shared VM), 1.9 GB RAM + swap, Docker 29.8.1, gVisor runsc, kernel 6.8; developer VM, n</text>
+<line class="g" x1="150.0" y1="48" x2="150.0" y2="380"/><text x="150.0" y="398" text-anchor="middle">1</text>
+<line class="g" x1="295.0" y1="48" x2="295.0" y2="380"/><text x="295.0" y="398" text-anchor="middle">10</text>
+<line class="g" x1="440.0" y1="48" x2="440.0" y2="380"/><text x="440.0" y="398" text-anchor="middle">100</text>
+<line class="g" x1="585.0" y1="48" x2="585.0" y2="380"/><text x="585.0" y="398" text-anchor="middle">1000</text>
+<line class="g" x1="730.0" y1="48" x2="730.0" y2="380"/><text x="730.0" y="398" text-anchor="middle">10000</text>
+<text x="142" y="78" text-anchor="end">cold_create</text>
+<rect class="p50" x="150" y="60" width="335.5" height="14"><title>cold_create p50_ms 205.95 ms</title></rect>
+<rect class="p95" x="150" y="76" width="368.1" height="14"><title>cold_create p95_ms 345.85 ms</title></rect>
+<line class="tg" x1="628.6" y1="56" x2="628.6" y2="92"><title>target 2000 ms</title></line>
+<text x="142" y="122" text-anchor="end">pool_acquire</text>
+<rect class="p50" x="150" y="104" width="108.7" height="14"><title>pool_acquire p50_ms 5.62 ms</title></rect>
+<rect class="p95" x="150" y="120" width="134.1" height="14"><title>pool_acquire p95_ms 8.41 ms</title></rect>
+<line class="tg" x1="465.5" y1="100" x2="465.5" y2="136"><title>target 150 ms</title></line>
+<text x="142" y="166" text-anchor="end">exec_true</text>
+<rect class="p50" x="150" y="148" width="286.3" height="14"><title>exec_true p50_ms 94.35 ms</title></rect>
+<rect class="p95" x="150" y="164" width="294.9" height="14"><title>exec_true p95_ms 108.13 ms</title></rect>
+<line class="tg" x1="440.0" y1="144" x2="440.0" y2="180"><title>target 100 ms</title></line>
+<text x="142" y="210" text-anchor="end">snapshot_create</text>
+<rect class="p50" x="150" y="192" width="399.5" height="14"><title>snapshot_create p50_ms 569.07 ms</title></rect>
+<rect class="p95" x="150" y="208" width="402.8" height="14"><title>snapshot_create p95_ms 599.81 ms</title></rect>
+<text x="142" y="254" text-anchor="end">snapshot_restore</text>
+<rect class="p50" x="150" y="236" width="421.8" height="14"><title>snapshot_restore p50_ms 811.14 ms</title></rect>
+<rect class="p95" x="150" y="252" width="433.6" height="14"><title>snapshot_restore p95_ms 978.28 ms</title></rect>
+<text x="142" y="298" text-anchor="end">fork_2</text>
+<rect class="p50" x="150" y="280" width="457.9" height="14"><title>fork_2 p50_ms 1439.52 ms</title></rect>
+<rect class="p95" x="150" y="296" width="463.2" height="14"><title>fork_2 p95_ms 1564.49 ms</title></rect>
+<text x="142" y="342" text-anchor="end">fork_4</text>
+<rect class="p50" x="150" y="324" width="492.8" height="14"><title>fork_4 p50_ms 2503.21 ms</title></rect>
+<rect class="p95" x="150" y="340" width="505.6" height="14"><title>fork_4 p95_ms 3067.04 ms</title></rect>
+</svg>

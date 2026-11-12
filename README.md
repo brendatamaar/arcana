@@ -207,6 +207,8 @@ curl --fail-with-body "$ARCANA_URL/v1/sandboxes/$sandbox_id/exec" \
   --data '{"cmd":["/bin/echo","hello"],"timeout_seconds":10}'
 ```
 
+Measured performance against the PRD targets is in [docs/benchmarks.md](docs/benchmarks.md).
+
 A reference coding agent, [fix-agent](examples/fix-agent), uses sandboxes, snapshots and forks to fix
 bugs in ten small [fixtures](examples/fixtures). No real-model results are recorded yet; see
 [docs/agent-results.md](docs/agent-results.md).

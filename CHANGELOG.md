@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `arcana bench` (cold create, warm-pool acquire, exec overhead, density, snapshot/restore/fork) with JSON and Markdown output and PRD target verdicts, a chart script, and docs/benchmarks.md with a first measured run.
+
 - Add `examples/fix-agent`, a reference coding agent (OpenAI-compatible endpoint, Ollama by default) with run, eval and verify-fixtures commands, step/token budgets, hidden-test judging and a `--parallel N` snapshot-and-fork mode, plus ten verified buggy fixtures and `make eval-agent`. No real-model results are recorded yet (docs/agent-results.md).
 
 - Add Python (`sdk/python`, `arcana-sdk`) and TypeScript (`sdk/typescript`, `@brendatamaar/arcana`) SDKs generated from `api/openapi.yaml`, with hand-written streaming exec, binary file/archive transfer, typed errors and snapshot/fork helpers, `make sdk-generate`/`sdk-test`, and a CI job running each against a live Arcana (ADR 0005).
