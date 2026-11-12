@@ -67,3 +67,9 @@ sdk-test-python: build
 	cd sdk/python && PYTHONPATH=src ../../scripts/with-arcana.sh $(PYTHON) -W error -m unittest tests.test_live -v
 
 sdk-test: sdk-test-typescript sdk-test-python
+
+# Needs a running Arcana (ARCANA_URL, ARCANA_API_KEY), the python/node/go template images and an
+# OpenAI-compatible model (FIXAGENT_BASE_URL, FIXAGENT_MODEL; Ollama by default). Prints a results table.
+.PHONY: eval-agent
+eval-agent:
+	go run ./examples/fix-agent eval $(EVAL_ARGS)

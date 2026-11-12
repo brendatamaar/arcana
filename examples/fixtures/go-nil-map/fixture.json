@@ -1,0 +1,8 @@
+{
+  "name": "go-nil-map",
+  "language": "go",
+  "template": "go",
+  "description": "Counter writes to a nil map",
+  "visible_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test -run '^TestVisible' ./...",
+  "hidden_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test ./..."
+}

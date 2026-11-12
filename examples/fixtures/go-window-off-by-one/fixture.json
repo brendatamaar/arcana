@@ -1,0 +1,8 @@
+{
+  "name": "go-window-off-by-one",
+  "language": "go",
+  "template": "go",
+  "description": "Window drops the last sliding window",
+  "visible_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test -run '^TestVisible' ./...",
+  "hidden_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test ./..."
+}

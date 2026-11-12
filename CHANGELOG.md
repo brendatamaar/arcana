@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `examples/fix-agent`, a reference coding agent (OpenAI-compatible endpoint, Ollama by default) with run, eval and verify-fixtures commands, step/token budgets, hidden-test judging and a `--parallel N` snapshot-and-fork mode, plus ten verified buggy fixtures and `make eval-agent`. No real-model results are recorded yet (docs/agent-results.md).
+
 - Add Python (`sdk/python`, `arcana-sdk`) and TypeScript (`sdk/typescript`, `@brendatamaar/arcana`) SDKs generated from `api/openapi.yaml`, with hand-written streaming exec, binary file/archive transfer, typed errors and snapshot/fork helpers, `make sdk-generate`/`sdk-test`, and a CI job running each against a live Arcana (ADR 0005).
 
 - Add `arcana mcp`, an MCP stdio server (official Go SDK) with `create_sandbox`, `run_command`, `read_file`, `write_file`, `list_files`, `snapshot_sandbox`, `fork_sandbox` and `destroy_sandbox` tools. Sandboxes are labelled `mcp_session=<id>` and destroyed when the session ends unless kept. See `docs/mcp.md`.

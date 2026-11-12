@@ -1,0 +1,8 @@
+{
+  "name": "py-off-by-one",
+  "language": "python",
+  "template": "python",
+  "description": "sum_range excludes its end value",
+  "visible_test": "python -m unittest discover -s tests -p 'test_visible.py'",
+  "hidden_test": "python -m unittest discover -s tests -p 'test_*.py'"
+}

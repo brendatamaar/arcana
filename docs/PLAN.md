@@ -341,11 +341,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `sdk/typescript` (openapi-typescript + openapi-fetch, `ws` for streaming; Node >=18; `node --test`) and `sdk/python` (openapi-python-client 0.30.0 pinned with ruff, httpx2/attrs at runtime, `websockets` for streaming; Python >=3.11; `unittest`), each a generated layer plus a hand-written wrapper for exec (argv/shell, stdin), WebSocket streaming exec (binary-safe, stdin framing, resize, cancel), raw file/archive transfer, snapshot/fork (partial failures returned), admin and typed errors. Unit tests run against in-process fake HTTP/WebSocket servers and found two real bugs (unhandled rejection on a pre-start error frame; output lost between `started` and handler registration). `scripts/with-arcana.sh` starts a throwaway Arcana; the live tests of both SDKs passed against it on runsc. `make sdk-generate`/`sdk-verify-generated` (idempotent, verified) and `make sdk-test` added; ADR 0005 records the choices; the owner approved the dependencies. **Not verified:** the new CI `sdk` job (runc, Node 22) has not run on GitHub yet, and the SDKs were tested locally on Node 18 and Python 3.12 only. The Python generator omits the `application/gzip` archive endpoints, which the wrapper implements by hand.
 
-### [ ] T3.4 Reference agent and fixtures
+### [x] T3.4 Reference agent and fixtures
 - **Deps:** T3.2 · **PRD:** FR-SD-3, FR-SD-4
 - **Do:** `examples/fix-agent` (Go): OpenAI-compatible chat client (base URL, model, key from env; default `http://localhost:11434/v1` for Ollama), tool loop with `run_command`, `read_file`, `write_file`, `list_files`; step and token budgets; stops when hidden tests pass. `--parallel N` mode using snapshot + fork. `examples/fixtures/` with 10 small buggy projects and hidden tests. `make eval-agent` prints a results table.
 - **Acceptance:** agent runs end-to-end on at least one fixture with a local model; results recorded in `docs/agent-results.md` including failures.
 - **Verify:** `go test ./examples/fix-agent/...`; manual eval run.
+
+> Done, with one acceptance item **still open**: the agent has not been run with a real local model, and `docs/agent-results.md` records no model results (none exist). The owner chose to build everything and leave that run pending (2026-11-12); see Open questions. Built: `examples/fix-agent` (OpenAI-compatible client with tool calling, tool loop with step/token budgets and bounded tool output, hidden-test judge that places and removes hidden tests between turns, `--parallel N` snapshot+fork mode with first-pass cancellation and guaranteed cleanup, `run`/`eval`/`verify-fixtures`), 10 fixtures (4 Python, 3 Node, 3 Go) and `make eval-agent`. Unit tests use a scripted model and fake Arcana; integration tests on runsc verified all 10 fixtures (visible and hidden fail before, pass with the reference solution) and ran the agent end to end against a *scripted* OpenAI-compatible server (3 fixtures single-attempt, 1 in parallel mode, nothing left behind). Verification found that `/tmp` is noexec, so Go fixtures set `GOTMPDIR` (noted in templates/README.md). Hidden tests are never in the model's view.
 
 ### [ ] T3.5 Benchmark harness
 - **Deps:** T3.1 · **PRD:** §8.2, FR-CL-5
@@ -517,5 +519,7 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
 
 - 2026-11-09 — Resolved: approved cgroup-based ESC-03 checks passed in isolation and the full escape suite; T2.5 verification is complete.
+
+- 2026-11-12 — OPEN (T3.4): run `make eval-agent` with a real local model (FIXAGENT_BASE_URL/FIXAGENT_MODEL, e.g. Ollama) and record the table and failures in docs/agent-results.md, for single-attempt and `--parallel 4`. The build environment had no model endpoint and ~1 GB RAM, so the acceptance item "runs end-to-end on at least one fixture with a local model; results recorded including failures" is unmet; no results were invented. Owner chose to leave this pending. Does not block T3.5–T3.7; T3.8 needs the real results for its demo recording.
 
 - 2026-11-12 — Resolved by owner: T3.3 SDK dependencies (generated clients plus `ws`/`websockets` for streaming) approved; see ADR 0005.

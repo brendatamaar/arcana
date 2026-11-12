@@ -1,0 +1,28 @@
+package counter
+
+import "testing"
+
+func TestHiddenMissingWordIsZero(t *testing.T) {
+	var c Counter
+	if c.Count("nope") != 0 || c.Total() != 0 {
+		t.Fatal("empty counter should be zero")
+	}
+}
+
+func TestHiddenTotals(t *testing.T) {
+	var c Counter
+	for _, w := range []string{"a", "b", "a"} {
+		c.Add(w)
+	}
+	if c.Count("a") != 2 || c.Count("b") != 1 || c.Total() != 3 {
+		t.Fatalf("a=%d b=%d total=%d", c.Count("a"), c.Count("b"), c.Total())
+	}
+}
+
+func TestHiddenCountersAreIndependent(t *testing.T) {
+	var x, y Counter
+	x.Add("k")
+	if y.Count("k") != 0 {
+		t.Fatal("counters share state")
+	}
+}

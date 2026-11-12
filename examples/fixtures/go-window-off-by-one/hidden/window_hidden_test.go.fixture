@@ -1,0 +1,27 @@
+package window
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestHiddenWholeSliceIsOneWindow(t *testing.T) {
+	got := Window([]int{1, 2, 3}, 3)
+	if !reflect.DeepEqual(got, [][]int{{1, 2, 3}}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestHiddenTooLargeOrNonPositive(t *testing.T) {
+	for _, size := range []int{0, -1, 4} {
+		if got := Window([]int{1, 2, 3}, size); len(got) != 0 {
+			t.Fatalf("size %d: got %v", size, got)
+		}
+	}
+}
+
+func TestHiddenSizeOne(t *testing.T) {
+	if got := Window([]int{7, 8}, 1); !reflect.DeepEqual(got, [][]int{{7}, {8}}) {
+		t.Fatalf("got %v", got)
+	}
+}

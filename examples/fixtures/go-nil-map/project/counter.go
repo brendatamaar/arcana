@@ -1,0 +1,26 @@
+// Package counter counts words.
+package counter
+
+// Counter counts occurrences of words; its zero value is ready to use.
+type Counter struct {
+	counts map[string]int
+}
+
+// Add records one occurrence of word.
+func (c *Counter) Add(word string) {
+	c.counts[word]++
+}
+
+// Count returns how often word was added.
+func (c *Counter) Count(word string) int {
+	return c.counts[word]
+}
+
+// Total returns the number of additions.
+func (c *Counter) Total() int {
+	total := 0
+	for _, n := range c.counts {
+		total += n
+	}
+	return total
+}

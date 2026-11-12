@@ -1,0 +1,8 @@
+{
+  "name": "js-numeric-sort",
+  "language": "node",
+  "template": "node",
+  "description": "Array.prototype.sort compares numbers as strings",
+  "visible_test": "node --test tests/visible.test.js",
+  "hidden_test": "node --test"
+}

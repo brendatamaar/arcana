@@ -1,0 +1,31 @@
+package derive
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestHiddenInputIsUntouched(t *testing.T) {
+	base := make([]string, 1, 10)
+	base[0] = "a"
+	_ = WithItem(base, "x")
+	if len(base) != 1 || base[:2][1] != "" {
+		t.Fatalf("input modified: %v", base[:2])
+	}
+}
+
+func TestHiddenNilAndEmpty(t *testing.T) {
+	if got := WithItem(nil, "a"); !reflect.DeepEqual(got, []string{"a"}) {
+		t.Fatalf("got %v", got)
+	}
+	if got := WithItem([]string{}, "a"); !reflect.DeepEqual(got, []string{"a"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestHiddenOrderIsKept(t *testing.T) {
+	got := WithItem([]string{"a", "b"}, "c")
+	if !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
+		t.Fatalf("got %v", got)
+	}
+}

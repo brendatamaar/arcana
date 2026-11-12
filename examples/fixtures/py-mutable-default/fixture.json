@@ -1,0 +1,8 @@
+{
+  "name": "py-mutable-default",
+  "language": "python",
+  "template": "python",
+  "description": "a mutable default argument leaks state between calls",
+  "visible_test": "python -m unittest discover -s tests -p 'test_visible.py'",
+  "hidden_test": "python -m unittest discover -s tests -p 'test_*.py'"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "go-append-aliasing",
+  "language": "go",
+  "template": "go",
+  "description": "append may write into a shared backing array",
+  "visible_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test -run '^TestVisible' ./...",
+  "hidden_test": "mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test ./..."
+}

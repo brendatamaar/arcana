@@ -1,0 +1,8 @@
+{
+  "name": "js-missing-await",
+  "language": "node",
+  "template": "node",
+  "description": "an async function forgets to await a promise",
+  "visible_test": "node --test tests/visible.test.js",
+  "hidden_test": "node --test"
+}

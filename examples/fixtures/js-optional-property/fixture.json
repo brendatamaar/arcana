@@ -1,0 +1,8 @@
+{
+  "name": "js-optional-property",
+  "language": "node",
+  "template": "node",
+  "description": "reading a nested property throws when the parent is missing",
+  "visible_test": "node --test tests/visible.test.js",
+  "hidden_test": "node --test"
+}

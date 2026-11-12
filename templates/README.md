@@ -17,6 +17,9 @@ Node: run `npm i lodash` from /workspace; cache and global installs also
 stay under /workspace. Go: create/upload a module in /workspace, then
 `go mod download`; GOPATH and GOCACHE stay under /workspace.
 
+Sandboxes mount `/tmp` `noexec`, so `go test` cannot run its test binary from the default temporary
+directory. Point it at the workspace: `mkdir -p /workspace/.cache/gotmp && GOTMPDIR=/workspace/.cache/gotmp go test ./...`.
+
 Package downloads require allowlist networking (T2.4). Until then, integration
 smokes use offline pip/venv, a local npm package, and a dependency-free Go module.
 
