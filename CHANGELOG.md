@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the documentation site (VitePress, published to GitHub Pages), an architecture page, and VHS terminal recordings of the CLI quickstart, `arcana doctor` and snapshot/fork plus a dashboard screenshot and recording, all recorded against a real Arcana; `scripts/record-tapes.sh` and `scripts/record-dashboard.mjs` regenerate them.
+
 - Add the read-only web dashboard at `/ui` (React, TypeScript, Tailwind; overview, sandboxes with live updates, sandbox detail with state history, countdowns, command history and a live ANSI-aware log viewer), embedded in release binaries, with `make web`, `web-check`, `web-e2e` and `build-all`, a strict Content-Security-Policy, and `GET /v1/sandboxes/{id}/history`. Binaries built without it serve an explanatory page.
 
 - Add the dashboard backend: cookie sessions (`POST /v1/sessions`, read-only by design), the `/v1/events` Server-Sent Events stream with resume, `/v1/overview`, exec history, and an in-memory exec output tail, with `ui.*` and `limits.exec.tail_*` settings, live metrics, Go client support and escape tests ESC-22/ESC-23.

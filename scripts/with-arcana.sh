@@ -7,6 +7,8 @@
 # ARCANA_LIVE=1. The runtime is runsc when Docker has it registered, otherwise runc with the
 # explicit insecure opt-in (CI and development hosts without gVisor). Override with
 # ARCANA_OCI_RUNTIME. The sandbox template image must exist (`make templates`).
+# ARCANA_LIVE_TEMPLATES lists extra template names whose images are arcana-<name>:local (default none).
+# The generated config path is exported as ARCANA_CONFIG (for `arcana doctor --config`).
 # ARCANA_LIVE_WARM_POOL sets the base template's warm pool (default 0). Any ARCANA_* variable in the
 # caller's environment, such as ARCANA_LIMITS__MAX_SANDBOXES, overrides the generated config as usual.
 set -euo pipefail
@@ -58,6 +60,9 @@ templates:
     image: arcana-base:local
     warm_pool: ${ARCANA_LIVE_WARM_POOL:-0}
 YAML
+for name in ${ARCANA_LIVE_TEMPLATES:-}; do
+  printf '  - name: %s\n    image: arcana-%s:local\n' "$name" "$name" >> "$work/config.yaml"
+done
 umask 077
 "$binary" serve --config "$work/config.yaml" > "$work/serve.log" 2>&1 &
 pid=$!
@@ -75,4 +80,4 @@ done
 curl -fsS "$url/v1/health" > /dev/null || { echo "arcana did not become healthy" >&2; tail -20 "$work/serve.log" >&2; exit 1; }
 
 echo "live Arcana on $url (runtime $runtime)" >&2
-ARCANA_URL="$url" ARCANA_API_KEY="$(cat "$work/data/admin.key")" ARCANA_LIVE=1 "$@"
+ARCANA_CONFIG="$work/config.yaml" ARCANA_URL="$url" ARCANA_API_KEY="$(cat "$work/data/admin.key")" ARCANA_LIVE=1 "$@"

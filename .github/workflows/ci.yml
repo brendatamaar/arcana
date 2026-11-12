@@ -56,6 +56,16 @@ jobs:
         run: docker build -t arcana-base:local templates/base
       - name: Test both SDKs against a live Arcana (runc; the runsc suites are in the security job)
         run: make sdk-test PYTHON=python
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - name: Docs site builds (a dead link fails the build)
+        run: cd docs && pnpm install --frozen-lockfile && pnpm run build
   web:
     runs-on: ubuntu-24.04
     timeout-minutes: 25

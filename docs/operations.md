@@ -51,7 +51,7 @@ unauthenticated, so keep it on loopback or a private network. Series are
 prefixed `arcana_`: API request counts and latency, sandbox create latency and
 destroy counts, exec counts and duration, egress decisions and reconcile
 orphans. A Prometheus and Grafana stack with a provisioned dashboard is in
-[`deploy/compose`](../deploy/compose/README.md).
+[`deploy/compose`](https://github.com/brendatamaar/arcana/blob/main/deploy/compose/README.md).
 
 ## Audit log
 

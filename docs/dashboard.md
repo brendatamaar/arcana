@@ -5,6 +5,8 @@ Arcana serves a read-only dashboard at `/ui` on the API listener (for example
 explanatory page instead, because the dashboard is built with Node and embedded at release time. Set
 `ui.enabled: false` to turn it off.
 
+![The dashboard following three parallel forks of one snapshot while their commands run](images/dashboard.gif)
+
 ## Using it
 
 Open `/ui/`, paste an API key and sign in. The key is sent once to `POST /v1/sessions` and exchanged for an

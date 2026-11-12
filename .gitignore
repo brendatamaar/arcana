@@ -6,3 +6,7 @@
 !/internal/webui/dist/.gitkeep
 /dist/
 /bench/
+
+docs/node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache

@@ -6,6 +6,8 @@ registered as a Docker runtime. Use a dedicated host or VM: access to the
 Docker socket is root-equivalent. Run `arcana doctor` after any install to
 check the prerequisites; it prints a fix hint for every failure.
 
+![arcana doctor checking a host](tapes/doctor.gif)
+
 ## Installer script (recommended)
 
 ```sh
@@ -52,7 +54,7 @@ docker pull ghcr.io/brendatamaar/arcana:<version>
 The multi-arch image is the same static binary, runs as UID 1000 and is also the
 default allowlist-proxy image (`network.proxy_image`). To run the daemon in a
 container use the ready-made Compose stack in
-[`deploy/compose`](../deploy/compose/README.md), which mounts the Docker socket
+[`deploy/compose`](https://github.com/brendatamaar/arcana/blob/main/deploy/compose/README.md), which mounts the Docker socket
 and the data directory at the same absolute path.
 
 ## From source

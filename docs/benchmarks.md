@@ -30,7 +30,7 @@ restore into a new sandbox, and forks of 2 and 4). Percentiles are nearest-rank.
 Host: a 2 vCPU shared VM (AMD EPYC 7K62), 1.9 GB RAM plus swap, Docker 29.8.1, gVisor runsc, kernel 6.8.
 **This is not the PRD reference host** (4 vCPU, 8 GB, SSD), which is larger in CPU and memory, and other
 workloads were running on the VM. The benchmark client ran on the same machine, so the numbers include
-client CPU contention. Raw data: [results.json](benchmarks/results.json), [results.md](benchmarks/results.md).
+client CPU contention. Raw data: [results.json](https://github.com/brendatamaar/arcana/blob/main/docs/benchmarks/results.json), [results.md](https://github.com/brendatamaar/arcana/blob/main/docs/benchmarks/results.md).
 
 | Metric | PRD target | Result (p50 / p95 / p99) | Verdict |
 |---|---|---|---|

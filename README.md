@@ -13,6 +13,15 @@ TTL/idle cleanup, crash reconciliation, API keys, a Go client, CLI, and host
 diagnostics. Sandbox networking defaults to `none`; isolation defaults to gVisor
 (`runsc`).
 
+![Creating a sandbox, running Python in it, moving a file in and cleaning up with the Arcana CLI](docs/tapes/quickstart.gif)
+
+![The Arcana dashboard following a command's live, coloured output in a forked sandbox](docs/images/dashboard.png)
+
+*Recorded against a real Arcana on gVisor: the CLI quickstart, and the read-only dashboard following three
+parallel variants forked from one snapshot ([recording](docs/images/dashboard.gif)).*
+
+Documentation site sources are in [docs/](docs/) (built with VitePress; see the [architecture](docs/architecture.md)).
+
 Self-hosting guides: [install](docs/install.md), [configuration](docs/configuration.md),
 [security model](docs/security.md), [networking](docs/networking.md) and
 [operations](docs/operations.md).
