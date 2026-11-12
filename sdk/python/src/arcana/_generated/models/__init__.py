@@ -11,6 +11,8 @@ from .created_key import CreatedKey
 from .error import Error
 from .error_error import ErrorError
 from .error_error_code import ErrorErrorCode
+from .exec_list import ExecList
+from .exec_record import ExecRecord
 from .exec_result import ExecResult
 from .file_entry import FileEntry
 from .file_entry_type import FileEntryType
@@ -26,16 +28,23 @@ from .key import Key
 from .key_list import KeyList
 from .network import Network
 from .network_mode import NetworkMode
+from .overview import Overview
+from .pool_fill import PoolFill
 from .resources import Resources
 from .sandbox import Sandbox
 from .sandbox_labels import SandboxLabels
 from .sandbox_list import SandboxList
 from .sandbox_source import SandboxSource
 from .sandbox_state import SandboxState
+from .session import Session
 from .snapshot import Snapshot
 from .snapshot_list import SnapshotList
+from .state_change import StateChange
+from .state_history import StateHistory
 from .template import Template
+from .template_count import TemplateCount
 from .template_list import TemplateList
+from .termination import Termination
 
 __all__ = (
     "AuditEvent",
@@ -49,6 +58,8 @@ __all__ = (
     "Error",
     "ErrorError",
     "ErrorErrorCode",
+    "ExecList",
+    "ExecRecord",
     "ExecResult",
     "FileEntry",
     "FileEntryType",
@@ -64,14 +75,21 @@ __all__ = (
     "KeyList",
     "Network",
     "NetworkMode",
+    "Overview",
+    "PoolFill",
     "Resources",
     "Sandbox",
     "SandboxLabels",
     "SandboxList",
     "SandboxSource",
     "SandboxState",
+    "Session",
     "Snapshot",
     "SnapshotList",
+    "StateChange",
+    "StateHistory",
     "Template",
+    "TemplateCount",
     "TemplateList",
+    "Termination",
 )

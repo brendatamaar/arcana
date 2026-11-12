@@ -91,6 +91,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange the API key for a dashboard session cookie
+         * @description Authenticated with an API key (Authorization header); a cookie cannot create sessions. The response sets the session token as an HttpOnly, SameSite=Strict cookie, Secure unless the request is plain HTTP to a loopback address. Only the token's SHA-256 is stored. Sessions expire after ui.session_ttl_seconds and stop working when the key is revoked. Each key keeps at most 20 sessions.
+         */
+        post: operations["createSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Log out of the dashboard
+         * @description Ends the session identified by the cookie and clears it. Idempotent.
+         */
+        delete: operations["deleteCurrentSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-Sent Events stream of lifecycle, exec and pool events
+         * @description Events carry increasing IDs; reconnect with Last-Event-ID to resume from the last ui.event_buffer events. A client that cannot be resumed, or falls too far behind, receives a `reset` event and is disconnected and must refetch state. A comment line is sent every 15 seconds. Events are filtered to what the caller may see; pool events are admin-only. Types: sandbox.created, sandbox.state, sandbox.destroyed, exec.started, exec.ended, pool.changed. Metadata only; exec output is never included. See docs/events.md.
+         */
+        get: operations["streamEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard overview */
+        get: operations["getOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sandboxes/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** State transitions of a sandbox */
+        get: operations["getSandboxHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sandboxes/{id}/execs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exec history of a sandbox, newest first */
+        get: operations["listExecs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sandboxes/{id}/execs/{exec_id}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-Sent Events tail of an exec's buffered and live output
+         * @description Replays the in-memory ring (limits.exec.tail_buffer_bytes), then streams live output until the exec ends. `output` events carry {seq, stream, data} with base64 data; `gap` means older output was discarded; `end` carries the exit result, with expired=true when the output is no longer retained (tail_retention_seconds after the exec ended). Output is never persisted. At most limits.exec.max_tail_subscribers readers per exec.
+         */
+        get: operations["streamExecOutput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/templates": {
         parameters: {
             query?: never;
@@ -351,6 +482,78 @@ export interface components {
         ForkResult: {
             items: components["schemas"]["Sandbox"][];
             failures: components["schemas"]["ForkFailure"][];
+        };
+        StateChange: {
+            state: components["schemas"]["SandboxState"];
+            /** Format: date-time */
+            at: string;
+            reason?: string | null;
+        };
+        /** @description A sandbox's persisted state transitions in order, with the reason where one was recorded. */
+        StateHistory: {
+            items: components["schemas"]["StateChange"][];
+        };
+        /** @description A dashboard browser session. Its token is delivered only as an HttpOnly cookie. */
+        Session: {
+            id: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        /** @description Metadata of one exec. Output is never stored; see the exec output stream. */
+        ExecRecord: {
+            id: string;
+            sandbox_id: string;
+            /** @description argv when the exec was given as an array. */
+            cmd?: string[] | null;
+            /** @description The shell string when the exec used the shell field. */
+            shell?: string | null;
+            cwd: string;
+            tty: boolean;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            ended_at?: string | null;
+            /** @description The command's real exit status; null while running or when it could not be confirmed. */
+            exit_code?: number | null;
+            timed_out?: boolean | null;
+            cancelled: boolean;
+            truncated?: boolean | null;
+            /** Format: int64 */
+            stdout_bytes?: number | null;
+            /** Format: int64 */
+            stderr_bytes?: number | null;
+        };
+        ExecList: {
+            items: components["schemas"]["ExecRecord"][];
+            next_cursor?: string | null;
+        };
+        TemplateCount: {
+            template: string;
+            /** Format: int64 */
+            count: number;
+        };
+        PoolFill: {
+            template: string;
+            /** Format: int64 */
+            available: number;
+            /** Format: int64 */
+            target: number;
+        };
+        Termination: {
+            id: string;
+            template: string;
+            state: components["schemas"]["SandboxState"];
+            reason?: string | null;
+            /** Format: date-time */
+            ended_at: string;
+        };
+        /** @description Admin keys see installation-wide numbers; other keys see their own, and no pool fill. */
+        Overview: {
+            version: string;
+            runtime: string;
+            sandboxes_by_template: components["schemas"]["TemplateCount"][];
+            pool: components["schemas"]["PoolFill"][];
+            recent_terminations: components["schemas"]["Termination"][];
         };
         Template: {
             network_preset?: string;
@@ -720,6 +923,228 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session created */
+            201: {
+                headers: {
+                    /** @description arcana_session=<token> */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    deleteCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logged out */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    streamEvents: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Last-Event-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Overview"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getSandboxHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StateHistory"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listExecs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    streamExecOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                exec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Output stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
             500: components["responses"]["Error"];
             501: components["responses"]["Error"];
             503: components["responses"]["Error"];
