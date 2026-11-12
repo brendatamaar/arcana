@@ -1,0 +1,26 @@
+{
+  "name": "Arcana",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false },
+    "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12", "installTools": false }
+  },
+  "privileged": true,
+  "hostRequirements": { "cpus": 4, "memory": "8gb", "storage": "32gb" },
+  "containerEnv": { "GOTOOLCHAIN": "auto", "ARCANA_URL": "http://127.0.0.1:7070" },
+  "forwardPorts": [7070, 9090],
+  "portsAttributes": {
+    "7070": { "label": "Arcana API and dashboard (/ui)", "onAutoForward": "notify" },
+    "9090": { "label": "Arcana metrics" }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-start.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "bradlc.vscode-tailwindcss"],
+      "settings": { "go.toolsManagement.autoUpdate": true, "terminal.integrated.defaultProfile.linux": "bash" }
+    }
+  }
+}

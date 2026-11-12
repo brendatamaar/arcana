@@ -43,7 +43,7 @@ export default defineConfig({
       },
       { text: "Security", items: [{ text: "Security model", link: "/security" }, { text: "Escape suite", link: "/escape-v1" }] },
       { text: "Performance", items: [{ text: "Benchmarks", link: "/benchmarks" }, { text: "Reference agent results", link: "/agent-results" }] },
-      { text: "Design", items: [{ text: "Architecture", link: "/architecture" }, { text: "Decision records", link: "/decisions" }] },
+      { text: "Design", items: [{ text: "Architecture", link: "/architecture" }, { text: "Decision records", link: "/decisions" }, { text: "Development container", link: "/devcontainer" }] },
     ],
     socialLinks: [{ icon: "github", link: repo }],
     editLink: { pattern: `${repo}/edit/main/docs/:path`, text: "Edit this page on GitHub" },

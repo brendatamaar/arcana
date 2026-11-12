@@ -390,10 +390,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added a VitePress site in `docs/` (home, quickstart, SDKs, architecture, decision index, curated sidebar, local search; PRD/PLAN/AGENTS stay out of it; dead links fail the build), a Pages workflow (`.github/workflows/docs.yml`) and a CI `docs` build job. Three VHS tapes (`docs/tapes/`: doctor, quickstart, snapshot-and-fork) were recorded against a real Arcana on runsc and the GIFs are committed, as are a dashboard screenshot and a recording of the dashboard while three parallel forks work (`scripts/record-dashboard.mjs`, Playwright); `scripts/record-tapes.sh` regenerates the GIFs. The README embeds the quickstart GIF and the dashboard screenshot; the site embeds all recordings. The site built locally and its pages were checked in a browser. **Not verified:** the Pages deployment itself (needs the push and Pages enabled in the repository settings), so "docs workflow green" is untested. **Deviation:** the dashboard recording shows the snapshot-and-fork demo driven through the API, not the LLM fix-agent's `--parallel` mode, because no real model was available (see T3.4's open item). Recordings used a headless Chromium with its sandbox disabled, on this host only (unprivileged user namespaces are off), to render our own local terminal page.
 
-### [ ] T3.9 Devcontainer
+### [x] T3.9 Devcontainer
 - **Deps:** T3.8 · **PRD:** §14
 - **Do:** `.devcontainer/` with Docker-in-Docker, Node LTS and pnpm for dashboard work, and an attempt to configure runsc; fall back to runc with `allow_insecure_runtime` and a loud banner if runsc fails. Document results.
 - **Verify:** manual Codespaces check noted in PR.
+
+> Done: Added `.devcontainer/` (devcontainer.json with Docker-in-Docker, Go, Node LTS, Python 3.12; pnpm via corepack in `post-create.sh`; ports 7070/9090 forwarded) and `setup-runtime.sh`, which installs and registers runsc, proves it with `docker run --runtime=runsc`, and otherwise writes a dev-only config with `oci_runtime: runc` + `allow_insecure_runtime: true` and a banner printed on creation, every start and every new terminal. Documented in `docs/devcontainer.md` (added to the docs sidebar). Checked locally: script syntax, JSON validity, forced-runc and detect-only paths, and that `arcana serve` accepts the generated config and logs the insecure-runtime warning. **Not verified:** a real Codespaces creation (the Verify step needs one, and whether runsc works there is unknown), the apt-based gVisor install path (this host already has runsc), and shellcheck (not installed here).
 
 ### [ ] T3.10 v0.3 release
 - **Deps:** T3.1–T3.9

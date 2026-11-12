@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add a development container (`.devcontainer/`) with Docker-in-Docker, Go, Node LTS with pnpm and Python. It tries to register gVisor (runsc) and otherwise falls back to runc with `allow_insecure_runtime` in a generated dev config and a loud banner on every start. Not yet verified in a real Codespace (docs/devcontainer.md).
+
 - Add the documentation site (VitePress, published to GitHub Pages), an architecture page, and VHS terminal recordings of the CLI quickstart, `arcana doctor` and snapshot/fork plus a dashboard screenshot and recording, all recorded against a real Arcana; `scripts/record-tapes.sh` and `scripts/record-dashboard.mjs` regenerate them.
 
 - Add the read-only web dashboard at `/ui` (React, TypeScript, Tailwind; overview, sandboxes with live updates, sandbox detail with state history, countdowns, command history and a live ANSI-aware log viewer), embedded in release binaries, with `make web`, `web-check`, `web-e2e` and `build-all`, a strict Content-Security-Policy, and `GET /v1/sandboxes/{id}/history`. Binaries built without it serve an explanatory page.
