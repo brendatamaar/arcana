@@ -139,7 +139,7 @@ func TestEscapeV3_DashboardSessions(t *testing.T) {
 	var cookie *http.Cookie
 	for _, ck := range loginResp.Cookies() {
 		if ck.Name == auth.SessionCookie {
-			cookie = &http.Cookie{Name: ck.Name, Value: ck.Value}
+			cookie = &http.Cookie{Name: ck.Name, Value: ck.Value} // #nosec G124 -- request cookie in a test
 		}
 	}
 	if cookie == nil {

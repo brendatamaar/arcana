@@ -1,5 +1,6 @@
 {
   "name": "@brendatamaar/arcana",
+  "packageManager": "pnpm@10.34.9",
   "version": "0.3.0",
   "description": "TypeScript client for the Arcana self-hosted sandbox orchestrator",
   "license": "Apache-2.0",

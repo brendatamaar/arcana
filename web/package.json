@@ -1,5 +1,6 @@
 {
   "name": "arcana-dashboard",
+  "packageManager": "pnpm@10.34.9",
   "version": "0.3.0",
   "private": true,
   "license": "Apache-2.0",
