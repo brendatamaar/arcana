@@ -574,3 +574,62 @@ func TestExecHistoryAndOverview_OwnershipPaginationAndCookieReads(t *testing.T) 
 		t.Fatal(got.StatusCode)
 	}
 }
+
+func TestSandboxHistory_OrderedReasonsAndOwnership(t *testing.T) {
+	env := newLiveEnv(t, true, nil)
+	id := env.createSandbox(t, env.owner)
+	if got := env.do(t, "DELETE", "/v1/sandboxes/"+id, env.owner, "", nil); got.StatusCode != 204 {
+		t.Fatal(got.StatusCode)
+	}
+	var history gen.StateHistory
+	resp := env.do(t, "GET", "/v1/sandboxes/"+id+"/history", env.owner, "", nil)
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &history); err != nil {
+		t.Fatal(err)
+	}
+	var states []string
+	for _, item := range history.Items {
+		states = append(states, string(item.State))
+	}
+	if strings.Join(states, ",") != "creating,running,destroying,destroyed" {
+		t.Fatalf("%v", states)
+	}
+	last := history.Items[len(history.Items)-1]
+	if last.Reason == nil || *last.Reason != "requested" {
+		t.Fatalf("end reason missing: %+v", last)
+	}
+	if got := env.do(t, "GET", "/v1/sandboxes/"+id+"/history", env.other, "", nil); got.StatusCode != 404 {
+		t.Fatalf("foreign key: %d", got.StatusCode)
+	}
+	cookie := env.login(t, env.owner)
+	if got := env.do(t, "GET", "/v1/sandboxes/"+id+"/history", "", "", map[string]string{"Sec-Fetch-Site": "same-origin"}, cookie); got.StatusCode != 200 {
+		t.Fatalf("cookie read: %d", got.StatusCode)
+	}
+	if got := env.do(t, "GET", "/v1/sandboxes/"+id+"/history", "", "", nil); got.StatusCode != 401 {
+		t.Fatal(got.StatusCode)
+	}
+}
+
+func TestUIMount_ServedOutsideAuthWhileTheAPIStaysProtected(t *testing.T) {
+	database, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "ui.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	keys := auth.New(database, auth.SystemClock{})
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "dashboard") })
+	handler := New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), config.Default().Limits.Files, nil, Options{UI: ui})
+	for target, want := range map[string]int{"/ui": 200, "/ui/": 200, "/ui/sandboxes/sbx_a": 200, "/v1/sandboxes": 401, "/v1/health": 200, "/uix": 401} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", target, nil))
+		if w.Code != want {
+			t.Errorf("%s: %d want %d", target, w.Code, want)
+		}
+	}
+	// Disabled: /ui is just another unauthenticated path and gets no special handling.
+	plain := New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), config.Default().Limits.Files, nil)
+	w := httptest.NewRecorder()
+	plain.ServeHTTP(w, httptest.NewRequest("GET", "/ui/", nil))
+	if w.Code != 401 {
+		t.Fatalf("a disabled dashboard must not be served: %d", w.Code)
+	}
+}

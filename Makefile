@@ -73,3 +73,25 @@ sdk-test: sdk-test-typescript sdk-test-python
 .PHONY: eval-agent
 eval-agent:
 	go run ./examples/fix-agent eval $(EVAL_ARGS)
+
+# Dashboard (web/). Needs Node LTS and pnpm (`corepack enable`); nothing else in the repo does.
+.PHONY: web web-dev web-generate web-check web-e2e build-all
+web:
+	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) run build && $(PNPM) run size
+
+web-dev:
+	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) run dev
+
+web-generate:
+	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) run generate
+
+# Compares generated types against the index, like the other verify targets.
+web-check:
+	cd web && $(PNPM) install --frozen-lockfile && $(PNPM) run lint && $(PNPM) run typecheck && $(PNPM) run format:check && $(PNPM) run test && $(PNPM) run verify-generated && $(PNPM) run build && $(PNPM) run size
+
+build-all: web build
+
+# Smoke test in a real browser against a throwaway Arcana with the dashboard embedded (make build-all first;
+# `pnpm exec playwright install chromium` once).
+web-e2e:
+	cd web && ../scripts/with-arcana.sh $(PNPM) run e2e

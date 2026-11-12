@@ -794,6 +794,39 @@ func (q *Queries) ListKeys(ctx context.Context, arg ListKeysParams) ([]ApiKey, e
 	return items, nil
 }
 
+const listSandboxTransitions = `-- name: ListSandboxTransitions :many
+SELECT sequence, sandbox_id, state, at, reason FROM sandbox_transitions WHERE sandbox_id = ? ORDER BY sequence LIMIT 100
+`
+
+func (q *Queries) ListSandboxTransitions(ctx context.Context, sandboxID string) ([]SandboxTransition, error) {
+	rows, err := q.db.QueryContext(ctx, listSandboxTransitions, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SandboxTransition{}
+	for rows.Next() {
+		var i SandboxTransition
+		if err := rows.Scan(
+			&i.Sequence,
+			&i.SandboxID,
+			&i.State,
+			&i.At,
+			&i.Reason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSandboxes = `-- name: ListSandboxes :many
 SELECT id, owner_key_id, template, runtime, state, container_id, source, cpus, memory_mb, disk_mb, pids, network_mode, network_allow, env_keys, labels, from_snapshot_id, created_at, expires_at, idle_timeout_seconds, last_activity_at, ended_at, end_reason FROM sandboxes WHERE id > ? AND (?2 = '' OR owner_key_id = ?2) AND (?3 = '' OR state = ?3)
 AND (?4 = '' OR labels ->> ?4 = ?5)

@@ -455,6 +455,18 @@ type SnapshotList struct {
 	NextCursor *string    `json:"next_cursor,omitempty"`
 }
 
+// StateChange defines model for StateChange.
+type StateChange struct {
+	At     time.Time    `json:"at"`
+	Reason *string      `json:"reason,omitempty"`
+	State  SandboxState `json:"state"`
+}
+
+// StateHistory A sandbox's persisted state transitions in order, with the reason where one was recorded.
+type StateHistory struct {
+	Items []StateChange `json:"items"`
+}
+
 // Template defines model for Template.
 type Template struct {
 	EnvKeys            []string  `json:"env_keys"`
@@ -806,6 +818,9 @@ type ServerInterface interface {
 
 	// (GET /v1/sandboxes/{id}/files/list)
 	ListFiles(w http.ResponseWriter, r *http.Request, id string, params ListFilesParams)
+	// GetSandboxHistory State transitions of a sandbox
+	// (GET /v1/sandboxes/{id}/history)
+	GetSandboxHistory(w http.ResponseWriter, r *http.Request, id string)
 
 	// (POST /v1/sandboxes/{id}/keepalive)
 	KeepaliveSandbox(w http.ResponseWriter, r *http.Request, id string)
@@ -1668,6 +1683,32 @@ func (siw *ServerInterfaceWrapper) ListFiles(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetSandboxHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetSandboxHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSandboxHistory(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // KeepaliveSandbox operation middleware
 func (siw *ServerInterfaceWrapper) KeepaliveSandbox(w http.ResponseWriter, r *http.Request) {
 
@@ -2016,6 +2057,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/events", wrapper.StreamEvents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/overview", wrapper.GetOverview)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/history", wrapper.GetSandboxHistory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/execs", wrapper.ListExecs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/execs/{exec_id}/output", wrapper.StreamExecOutput)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/templates", wrapper.ListTemplates)

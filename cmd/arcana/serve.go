@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
 	"github.com/brendatamaar/arcana/internal/store"
+	"github.com/brendatamaar/arcana/internal/webui"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -141,7 +143,7 @@ func newServeCommand() *cobra.Command {
 		group, serveCtx := errgroup.WithContext(ctx)
 		timeout := time.Duration(cfg.Server.ShutdownTimeoutSeconds) * time.Second
 		group.Go(func() error {
-			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey, MaxFork: cfg.Snapshots.MaxFork, Version: version}), timeout, logger)
+			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey, MaxFork: cfg.Snapshots.MaxFork, Version: version, UI: uiHandler(cfg.UI.Enabled)}), timeout, logger)
 		})
 		group.Go(func() error {
 			return api.Serve(serveCtx, netpolicy.BoundListener(metricsListener, 32), telemetry.Handler(), timeout, logger)
@@ -153,4 +155,12 @@ func newServeCommand() *cobra.Command {
 		defer cancelShutdown()
 		return errors.Join(serveErr, driver.DrainDecisions(shutdownCtx), lifecycle.Shutdown(shutdownCtx))
 	}}
+}
+
+// uiHandler mounts the dashboard unless ui.enabled is false.
+func uiHandler(enabled bool) http.Handler {
+	if !enabled {
+		return nil
+	}
+	return webui.Handler()
 }

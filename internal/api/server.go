@@ -29,6 +29,8 @@ type Options struct {
 	Middleware func(http.Handler) http.Handler
 	// Version is reported by /v1/overview.
 	Version string
+	// UI serves the dashboard under /ui, outside authentication and the API middleware. Nil disables it.
+	UI http.Handler
 	// HeartbeatInterval overrides the 15 second SSE keep-alive, for tests.
 	HeartbeatInterval time.Duration
 }
@@ -80,7 +82,19 @@ func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle 
 	if len(options) > 0 && options[0].Middleware != nil {
 		stack = options[0].Middleware(stack)
 	}
-	return &managedHandler{Handler: stack, server: server}
+	root := stack
+	if len(options) > 0 && options[0].UI != nil {
+		ui := options[0].UI
+		// A plain prefix check rather than http.ServeMux, which would redirect unclean API paths.
+		root = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/") {
+				ui.ServeHTTP(w, r)
+				return
+			}
+			stack.ServeHTTP(w, r)
+		})
+	}
+	return &managedHandler{Handler: root, server: server}
 }
 
 type managedHandler struct {

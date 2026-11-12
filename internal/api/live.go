@@ -382,3 +382,26 @@ func (s *Server) StreamExecOutput(w http.ResponseWriter, r *http.Request, id, ex
 		}
 	}
 }
+
+// GetSandboxHistory returns a sandbox's state transitions.
+func (s *Server) GetSandboxHistory(w http.ResponseWriter, r *http.Request, id string) {
+	if s.lifecycle == nil {
+		s.notImplemented(w, r)
+		return
+	}
+	p, _ := auth.FromContext(r.Context())
+	rows, err := s.lifecycle.History(r.Context(), p, id)
+	if err != nil {
+		s.sandboxFailure(w, r, err)
+		return
+	}
+	out := gen.StateHistory{Items: make([]gen.StateChange, 0, len(rows))}
+	for _, row := range rows {
+		change := gen.StateChange{State: gen.SandboxState(row.State), At: row.At}
+		if row.Reason.Valid {
+			change.Reason = &row.Reason.String
+		}
+		out.Items = append(out.Items, change)
+	}
+	s.respond(w, r, http.StatusOK, out)
+}

@@ -25,6 +25,8 @@ type (
 	ExecList = gen.ExecList
 	// Overview is the dashboard landing data.
 	Overview = gen.Overview
+	// StateHistory lists a sandbox's state transitions.
+	StateHistory = gen.StateHistory
 )
 
 // ErrReset means the server cannot resume the stream (the Last-Event-ID is too old or from before a
@@ -254,5 +256,15 @@ func (c *Client) ListExecs(ctx context.Context, sandboxID string, o ListOptions)
 func (c *Client) GetOverview(ctx context.Context) (Overview, error) {
 	var out Overview
 	err := c.json(ctx, "GET", "/overview", nil, nil, &out)
+	return out, err
+}
+
+// GetSandboxHistory returns a sandbox's persisted state transitions in order.
+func (c *Client) GetSandboxHistory(ctx context.Context, sandboxID string) (StateHistory, error) {
+	var out StateHistory
+	p, err := resource(sandboxID)
+	if err == nil {
+		err = c.json(ctx, "GET", p+"/history", nil, nil, &out)
+	}
 	return out, err
 }

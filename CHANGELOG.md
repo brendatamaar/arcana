@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the read-only web dashboard at `/ui` (React, TypeScript, Tailwind; overview, sandboxes with live updates, sandbox detail with state history, countdowns, command history and a live ANSI-aware log viewer), embedded in release binaries, with `make web`, `web-check`, `web-e2e` and `build-all`, a strict Content-Security-Policy, and `GET /v1/sandboxes/{id}/history`. Binaries built without it serve an explanatory page.
+
 - Add the dashboard backend: cookie sessions (`POST /v1/sessions`, read-only by design), the `/v1/events` Server-Sent Events stream with resume, `/v1/overview`, exec history, and an in-memory exec output tail, with `ui.*` and `limits.exec.tail_*` settings, live metrics, Go client support and escape tests ESC-22/ESC-23.
 - Fix `exec.started` audit events being silently dropped for shell commands.
 

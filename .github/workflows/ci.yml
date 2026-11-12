@@ -56,6 +56,30 @@ jobs:
         run: docker build -t arcana-base:local templates/base
       - name: Test both SDKs against a live Arcana (runc; the runsc suites are in the security job)
         run: make sdk-test PYTHON=python
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - name: Lint, typecheck, unit tests, generated types, bundle budget
+        run: make web-check
+      - name: Build Arcana with the dashboard embedded
+        run: make build-all
+      - run: go test ./internal/webui/...
+      - name: Install the browser for the smoke test
+        run: cd web && pnpm exec playwright install --with-deps chromium
+      - name: Build the sandbox template image
+        run: docker build -t arcana-base:local templates/base
+      - name: Playwright smoke test against a live Arcana (runc), checking for CSP violations
+        run: make web-e2e
   goreleaser:
     runs-on: ubuntu-24.04
     steps:
@@ -66,6 +90,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: goreleaser/goreleaser-action@v6

@@ -107,3 +107,15 @@ func (s *Service) Overview(ctx context.Context, p auth.Principal) (Overview, err
 	}
 	return out, nil
 }
+
+// History returns a sandbox's persisted state transitions in order, after an ownership check.
+func (s *Service) History(ctx context.Context, p auth.Principal, sandboxID string) ([]db.SandboxTransition, error) {
+	if _, err := s.Get(ctx, p, sandboxID); err != nil {
+		return nil, err
+	}
+	rows, err := s.store.Queries.ListSandboxTransitions(ctx, sandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("listing transitions: %w", err)
+	}
+	return rows, nil
+}

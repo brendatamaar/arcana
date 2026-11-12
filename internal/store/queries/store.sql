@@ -126,3 +126,6 @@ GROUP BY template ORDER BY template;
 -- name: RecentEndedSandboxes :many
 SELECT * FROM sandboxes WHERE ended_at IS NOT NULL AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner))
 ORDER BY ended_at DESC, id DESC LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 100);
+
+-- name: ListSandboxTransitions :many
+SELECT * FROM sandbox_transitions WHERE sandbox_id = ? ORDER BY sequence LIMIT 100;

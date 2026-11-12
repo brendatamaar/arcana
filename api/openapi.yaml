@@ -145,6 +145,30 @@ components:
           maxItems: 1000
           items:
             $ref: '#/components/schemas/ForkFailure'
+    StateChange:
+      type: object
+      additionalProperties: false
+      required: [state, at]
+      properties:
+        state:
+          $ref: '#/components/schemas/SandboxState'
+        at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          nullable: true
+    StateHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      description: A sandbox's persisted state transitions in order, with the reason where one was recorded.
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/StateChange'
     Session:
       type: object
       additionalProperties: false
@@ -1101,6 +1125,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Overview'
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/history:
+    get:
+      operationId: getSandboxHistory
+      summary: State transitions of a sandbox
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateHistory'
         "400":
           $ref: '#/components/responses/Error'
         "401":

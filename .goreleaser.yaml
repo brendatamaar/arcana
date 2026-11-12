@@ -1,6 +1,11 @@
 version: 2
 project_name: arcana
 
+# The dashboard is built and embedded into every release binary (PRD FR-WD-10).
+before:
+  hooks:
+    - make web
+
 builds:
   - id: arcana
     main: ./cmd/arcana
