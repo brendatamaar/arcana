@@ -70,10 +70,36 @@ sudo tar -czf arcana-backup-$(date +%F).tar.gz -C /var/lib arcana
 sudo systemctl start arcana
 ```
 
-This preserves API keys, sandbox metadata and audit history. Sandbox contents
-live in Docker volumes and are ephemeral by design; v0.2 has no snapshot
-feature. Restoring requires the same `data_dir` path and a matching or newer
-Arcana version.
+This preserves API keys, sandbox metadata, audit history and snapshot archives
+(`data_dir/snapshots`). Sandbox contents live in Docker volumes and are
+ephemeral by design; only snapshots outlive a sandbox. Restoring requires the
+same `data_dir` path and a matching or newer Arcana version. A backup taken
+while a snapshot is being written may contain a `.part` file; Arcana removes
+those at startup.
+
+## Snapshots
+
+A snapshot is a gzip tar of a sandbox's `/workspace`, streamed out through exec
+and stored under `data_dir/snapshots/<id>.tar.gz` (directory `0700`, files
+`0600`) with its size and SHA-256 in the database. It captures the workspace
+only: not running processes, not files outside `/workspace`, and not environment
+values (only the key names are recorded). The host never opens sandbox files and
+never extracts an archive; a restore verifies the stored hash, then extracts
+inside the new sandbox.
+
+Limits (see [configuration](configuration.md)): `snapshots.max_per_key`,
+`snapshots.max_total_bytes` (compressed bytes on disk) and `snapshots.max_fork`.
+Each archive is also capped by `limits.files.max_archive_bytes`. Size
+`data_dir`'s filesystem for `max_total_bytes`.
+
+Quiesce writers before snapshotting: if the workspace changes while `tar` reads
+it, the snapshot fails rather than recording an inconsistent archive. Creating a
+snapshot and restoring one are ordinary supervised execs, so they are subject to
+the exec timeout (`limits.exec.default_timeout_seconds`); very large workspaces
+may need it raised. A restore that fails verification or extraction destroys the
+new sandbox with reason `restore_failed`. After a crash, startup reconciliation
+removes interrupted `.part` files and archives that have no database record.
+Deleting a snapshot removes the archive first, then the record.
 
 ## Upgrades
 

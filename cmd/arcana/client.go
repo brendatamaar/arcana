@@ -70,12 +70,23 @@ func newSandboxCommand() *cobra.Command {
 	template := create.Flags().String("template", "base", "Template name")
 	ttl := create.Flags().Int64("ttl", 0, "TTL in seconds (server default when omitted)")
 	idle := create.Flags().Int64("idle-timeout", 0, "Idle timeout in seconds")
+	fromSnapshot := create.Flags().String("from-snapshot", "", "Restore this snapshot into /workspace (template defaults to the snapshot's)")
 	create.RunE = func(cmd *cobra.Command, _ []string) error {
 		c, err := apiClient(cmd)
 		if err != nil {
 			return err
 		}
 		request := client.CreateSandboxRequest{Template: *template}
+		if *fromSnapshot != "" {
+			request.FromSnapshot = fromSnapshot
+			if !cmd.Flags().Changed("template") {
+				snap, getErr := c.GetSnapshot(cmd.Context(), *fromSnapshot)
+				if getErr != nil {
+					return getErr
+				}
+				request.Template = snap.Template
+			}
+		}
 		if cmd.Flags().Changed("network") || len(*allow) > 0 || len(*presets) > 0 {
 			request.Network = &client.Network{Mode: client.NetworkMode(*networkMode), Allow: allow, Presets: presets}
 		}

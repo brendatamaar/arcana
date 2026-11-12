@@ -137,19 +137,19 @@ func (e NetworkMode) Valid() bool {
 
 // Defines values for SandboxSource.
 const (
-	Cold     SandboxSource = "cold"
-	Pool     SandboxSource = "pool"
-	Snapshot SandboxSource = "snapshot"
+	SandboxSourceCold     SandboxSource = "cold"
+	SandboxSourcePool     SandboxSource = "pool"
+	SandboxSourceSnapshot SandboxSource = "snapshot"
 )
 
 // Valid indicates whether the value is a known member of the SandboxSource enum.
 func (e SandboxSource) Valid() bool {
 	switch e {
-	case Cold:
+	case SandboxSourceCold:
 		return true
-	case Pool:
+	case SandboxSourcePool:
 		return true
-	case Snapshot:
+	case SandboxSourceSnapshot:
 		return true
 	default:
 		return false
@@ -210,7 +210,10 @@ type CreateKey struct {
 
 // CreateSandbox defines model for CreateSandbox.
 type CreateSandbox struct {
-	Env                *map[string]string `json:"env,omitempty"`
+	Env *map[string]string `json:"env,omitempty"`
+
+	// FromSnapshot Snapshot to restore into /workspace. The template must match the snapshot's template; resources and network default to the snapshot's recorded values.
+	FromSnapshot       *string            `json:"from_snapshot,omitempty"`
 	IdleTimeoutSeconds *int64             `json:"idle_timeout_seconds,omitempty"`
 	Labels             *map[string]string `json:"labels,omitempty"`
 	Network            *Network           `json:"network,omitempty"`
@@ -281,6 +284,32 @@ type FileEntryType string
 // FileList defines model for FileList.
 type FileList struct {
 	Items []FileEntry `json:"items"`
+}
+
+// ForkFailure defines model for ForkFailure.
+type ForkFailure struct {
+	Code string `json:"code"`
+
+	// Index Zero-based position of the failed sandbox in the request.
+	Index   int64  `json:"index"`
+	Message string `json:"message"`
+}
+
+// ForkRequest Overrides apply to every sandbox created by the fork.
+type ForkRequest struct {
+	Count              int64              `json:"count"`
+	Env                *map[string]string `json:"env,omitempty"`
+	IdleTimeoutSeconds *int64             `json:"idle_timeout_seconds,omitempty"`
+	Labels             *map[string]string `json:"labels,omitempty"`
+	Network            *Network           `json:"network,omitempty"`
+	Resources          *Resources         `json:"resources,omitempty"`
+	TtlSeconds         *int64             `json:"ttl_seconds,omitempty"`
+}
+
+// ForkResult defines model for ForkResult.
+type ForkResult struct {
+	Failures []ForkFailure `json:"failures"`
+	Items    []Sandbox     `json:"items"`
 }
 
 // Health defines model for Health.
@@ -354,6 +383,25 @@ type SandboxList struct {
 
 // SandboxState defines model for SandboxState.
 type SandboxState string
+
+// Snapshot Compressed copy of a sandbox's /workspace plus its creation spec. Environment values are never stored.
+type Snapshot struct {
+	CreatedAt       time.Time `json:"created_at"`
+	EnvKeys         []string  `json:"env_keys"`
+	Id              string    `json:"id"`
+	Network         Network   `json:"network"`
+	Resources       Resources `json:"resources"`
+	Sha256          string    `json:"sha256"`
+	SizeBytes       int64     `json:"size_bytes"`
+	SourceSandboxId string    `json:"source_sandbox_id"`
+	Template        string    `json:"template"`
+}
+
+// SnapshotList defines model for SnapshotList.
+type SnapshotList struct {
+	Items      []Snapshot `json:"items"`
+	NextCursor *string    `json:"next_cursor,omitempty"`
+}
 
 // Template defines model for Template.
 type Template struct {
@@ -431,6 +479,12 @@ type ListFilesParams struct {
 	Depth *int64 `form:"depth,omitempty" json:"depth,omitempty"`
 }
 
+// ListSnapshotsParams defines parameters for ListSnapshots.
+type ListSnapshotsParams struct {
+	Limit  *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // CreateKeyJSONRequestBody defines body for CreateKey for application/json ContentType.
 type CreateKeyJSONRequestBody = CreateKey
 
@@ -439,6 +493,9 @@ type CreateSandboxJSONRequestBody = CreateSandbox
 
 // ExecJSONRequestBody defines body for Exec for application/json ContentType.
 type ExecJSONRequestBody = ExecRequest
+
+// ForkSnapshotJSONRequestBody defines body for ForkSnapshot for application/json ContentType.
+type ForkSnapshotJSONRequestBody = ForkRequest
 
 // AsExecRequest0 returns the union data inside the ExecRequest as a ExecRequest0
 func (t ExecRequest) AsExecRequest0() (ExecRequest0, error) {
@@ -662,6 +719,21 @@ type ServerInterface interface {
 
 	// (POST /v1/sandboxes/{id}/keepalive)
 	KeepaliveSandbox(w http.ResponseWriter, r *http.Request, id string)
+	// CreateSnapshot Snapshot a running sandbox's /workspace
+	// (POST /v1/sandboxes/{id}/snapshots)
+	CreateSnapshot(w http.ResponseWriter, r *http.Request, id string)
+	// ListSnapshots List snapshots visible to the key
+	// (GET /v1/snapshots)
+	ListSnapshots(w http.ResponseWriter, r *http.Request, params ListSnapshotsParams)
+
+	// (DELETE /v1/snapshots/{id})
+	DeleteSnapshot(w http.ResponseWriter, r *http.Request, id string)
+
+	// (GET /v1/snapshots/{id})
+	GetSnapshot(w http.ResponseWriter, r *http.Request, id string)
+	// ForkSnapshot Create N sandboxes from one snapshot
+	// (POST /v1/snapshots/{id}/fork)
+	ForkSnapshot(w http.ResponseWriter, r *http.Request, id string)
 	// ListTemplates List configured templates and resolved defaults (environment keys only)
 	// (GET /v1/templates)
 	ListTemplates(w http.ResponseWriter, r *http.Request)
@@ -1381,6 +1453,156 @@ func (siw *ServerInterfaceWrapper) KeepaliveSandbox(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// CreateSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSnapshot(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSnapshots operation middleware
+func (siw *ServerInterfaceWrapper) ListSnapshots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSnapshotsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSnapshots(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSnapshot(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSnapshot(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ForkSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) ForkSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ForkSnapshot(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTemplates operation middleware
 func (siw *ServerInterfaceWrapper) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
@@ -1516,6 +1738,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/audit", wrapper.ListAudit)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sandboxes/{id}/snapshots", wrapper.CreateSnapshot)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/snapshots", wrapper.ListSnapshots)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/snapshots/{id}", wrapper.DeleteSnapshot)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/snapshots/{id}", wrapper.GetSnapshot)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/snapshots/{id}/fork", wrapper.ForkSnapshot)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/templates", wrapper.ListTemplates)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/health", wrapper.Health)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/keys", wrapper.ListKeys)

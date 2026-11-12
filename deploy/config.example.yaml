@@ -77,11 +77,11 @@ templates:
   #   network_preset: go
   #   warm_pool: 0
 
-# snapshots:                        # v0.3
-#   max_per_key: 20
-#   max_total_bytes: 10737418240
-#   max_fork: 10
-# 
+snapshots:
+  max_per_key: 20
+  max_total_bytes: 10737418240    # compressed bytes under data_dir/snapshots
+  max_fork: 10
+
 audit:
   retention_days: 30
 # 

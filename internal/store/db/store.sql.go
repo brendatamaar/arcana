@@ -33,6 +33,17 @@ func (q *Queries) CountKeys(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countSnapshots = `-- name: CountSnapshots :one
+SELECT count(*) FROM snapshots WHERE ?1 = '' OR owner_key_id = ?1
+`
+
+func (q *Queries) CountSnapshots(ctx context.Context, owner interface{}) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSnapshots, owner)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createExec = `-- name: CreateExec :one
 INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at) VALUES (?,?,?,?,?,?,?) RETURNING id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes
 `
@@ -192,6 +203,61 @@ func (q *Queries) CreateSandbox(ctx context.Context, arg CreateSandboxParams) (S
 	return i, err
 }
 
+const createSnapshot = `-- name: CreateSnapshot :one
+INSERT INTO snapshots (id,owner_key_id,source_sandbox_id,template,spec,path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id, owner_key_id, source_sandbox_id, template, spec, path, size_bytes, sha256, created_at
+`
+
+type CreateSnapshotParams struct {
+	ID              string
+	OwnerKeyID      string
+	SourceSandboxID string
+	Template        string
+	Spec            string
+	Path            string
+	SizeBytes       int64
+	Sha256          string
+	CreatedAt       time.Time
+}
+
+func (q *Queries) CreateSnapshot(ctx context.Context, arg CreateSnapshotParams) (Snapshot, error) {
+	row := q.db.QueryRowContext(ctx, createSnapshot,
+		arg.ID,
+		arg.OwnerKeyID,
+		arg.SourceSandboxID,
+		arg.Template,
+		arg.Spec,
+		arg.Path,
+		arg.SizeBytes,
+		arg.Sha256,
+		arg.CreatedAt,
+	)
+	var i Snapshot
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKeyID,
+		&i.SourceSandboxID,
+		&i.Template,
+		&i.Spec,
+		&i.Path,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteSnapshot = `-- name: DeleteSnapshot :execrows
+DELETE FROM snapshots WHERE id = ?
+`
+
+func (q *Queries) DeleteSnapshot(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSnapshot, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const failUnfinishedExecs = `-- name: FailUnfinishedExecs :exec
 UPDATE execs SET ended_at = ?, cancelled = 1 WHERE sandbox_id = ? AND ended_at IS NULL
 `
@@ -345,6 +411,27 @@ func (q *Queries) GetSandbox(ctx context.Context, id string) (Sandbox, error) {
 		&i.LastActivityAt,
 		&i.EndedAt,
 		&i.EndReason,
+	)
+	return i, err
+}
+
+const getSnapshot = `-- name: GetSnapshot :one
+SELECT id, owner_key_id, source_sandbox_id, template, spec, path, size_bytes, sha256, created_at FROM snapshots WHERE id = ?
+`
+
+func (q *Queries) GetSnapshot(ctx context.Context, id string) (Snapshot, error) {
+	row := q.db.QueryRowContext(ctx, getSnapshot, id)
+	var i Snapshot
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKeyID,
+		&i.SourceSandboxID,
+		&i.Template,
+		&i.Spec,
+		&i.Path,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -567,6 +654,50 @@ func (q *Queries) ListSandboxes(ctx context.Context, arg ListSandboxesParams) ([
 	return items, nil
 }
 
+const listSnapshots = `-- name: ListSnapshots :many
+SELECT id, owner_key_id, source_sandbox_id, template, spec, path, size_bytes, sha256, created_at FROM snapshots WHERE id > ? AND (?2 = '' OR owner_key_id = ?2)
+ORDER BY id LIMIT MIN(MAX(CAST(?3 AS INTEGER), 1), 1000)
+`
+
+type ListSnapshotsParams struct {
+	ID        string
+	Owner     interface{}
+	PageLimit int64
+}
+
+func (q *Queries) ListSnapshots(ctx context.Context, arg ListSnapshotsParams) ([]Snapshot, error) {
+	rows, err := q.db.QueryContext(ctx, listSnapshots, arg.ID, arg.Owner, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Snapshot{}
+	for rows.Next() {
+		var i Snapshot
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKeyID,
+			&i.SourceSandboxID,
+			&i.Template,
+			&i.Spec,
+			&i.Path,
+			&i.SizeBytes,
+			&i.Sha256,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordSandboxTransition = `-- name: RecordSandboxTransition :exec
 INSERT INTO sandbox_transitions(sandbox_id,state,at,reason) VALUES (?,?,?,?)
 `
@@ -617,6 +748,17 @@ type SetMetaIfAbsentParams struct {
 func (q *Queries) SetMetaIfAbsent(ctx context.Context, arg SetMetaIfAbsentParams) error {
 	_, err := q.db.ExecContext(ctx, setMetaIfAbsent, arg.Key, arg.Value)
 	return err
+}
+
+const sumSnapshotBytes = `-- name: SumSnapshotBytes :one
+SELECT CAST(COALESCE(SUM(size_bytes),0) AS INTEGER) FROM snapshots
+`
+
+func (q *Queries) SumSnapshotBytes(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sumSnapshotBytes)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const touchKey = `-- name: TouchKey :exec

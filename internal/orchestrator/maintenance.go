@@ -110,6 +110,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			s.audit.Record("reconcile.orphan", "", instance.SandboxID, map[string]any{"kind": "container"})
 		}
 	}
+	if err = s.pruneSnapshots(ctx); err != nil {
+		return fmt.Errorf("pruning snapshot files: %w", err)
+	}
 	if pruner, ok := s.driver.(interface {
 		PruneOrphans(context.Context, map[string]bool) error
 	}); ok {

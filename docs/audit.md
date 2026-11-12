@@ -1,8 +1,11 @@
 # Audit log
 
 Arcana records metadata for key creation/revocation, sandbox lifecycle, exec
-start/end, file writes/deletes, archive uploads and allowlist proxy decisions.
-Snapshot recording is added with the snapshot feature in Phase 3. File and
+start/end, file writes/deletes, archive uploads, snapshot creation/deletion
+(`snapshot.created`, `snapshot.deleted`, with the snapshot ID and size) and
+allowlist proxy decisions. A sandbox restored from a snapshot reports
+`from_snapshot` in its `sandbox.created` event, recorded after the restore
+completes. File and
 archive bodies, exec output, environment values and API credentials are never
 included. API-key-shaped strings are redacted even in command metadata. Command argv or the caller's explicit shell string is recorded, as
 required for command auditing; callers should pass credentials through env

@@ -83,3 +83,15 @@ type SandboxTransition struct {
 	At        time.Time
 	Reason    sql.NullString
 }
+
+type Snapshot struct {
+	ID              string
+	OwnerKeyID      string
+	SourceSandboxID string
+	Template        string
+	Spec            string
+	Path            string
+	SizeBytes       int64
+	Sha256          string
+	CreatedAt       time.Time
+}

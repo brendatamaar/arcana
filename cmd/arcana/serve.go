@@ -128,7 +128,7 @@ func newServeCommand() *cobra.Command {
 		group, serveCtx := errgroup.WithContext(ctx)
 		timeout := time.Duration(cfg.Server.ShutdownTimeoutSeconds) * time.Second
 		group.Go(func() error {
-			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey}), timeout, logger)
+			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey, MaxFork: cfg.Snapshots.MaxFork}), timeout, logger)
 		})
 		group.Go(func() error {
 			return api.Serve(serveCtx, netpolicy.BoundListener(metricsListener, 32), telemetry.Handler(), timeout, logger)

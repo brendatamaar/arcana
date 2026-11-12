@@ -35,6 +35,7 @@ type Config struct {
 	Workspace Workspace  `koanf:"workspace"`
 	Network   Network    `koanf:"network"`
 	Templates []Template `koanf:"templates"`
+	Snapshots Snapshots  `koanf:"snapshots"`
 	Audit     Audit      `koanf:"audit"`
 	Log       Log        `koanf:"log"`
 }
@@ -131,6 +132,13 @@ type Template struct {
 	Workdir       string            `koanf:"workdir"`
 }
 
+// Snapshots bounds stored workspace archives and fork fan-out.
+type Snapshots struct {
+	MaxPerKey     int   `koanf:"max_per_key"`
+	MaxTotalBytes int64 `koanf:"max_total_bytes"`
+	MaxFork       int   `koanf:"max_fork"`
+}
+
 // Audit configures retention of metadata-only events.
 type Audit struct {
 	RetentionDays int `koanf:"retention_days"`
@@ -152,6 +160,7 @@ func Default() Config {
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
 		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
+		Snapshots: Snapshots{20, 10737418240, 10},
 		Audit:     Audit{30},
 		Log:       Log{"info", "json"},
 	}
@@ -324,6 +333,12 @@ func (c Config) Validate() error {
 		if t.Workdir != "" && !path.IsAbs(t.Workdir) {
 			bad(field+".workdir", "must be absolute")
 		}
+	}
+	if c.Snapshots.MaxFork > c.Limits.MaxSandboxes {
+		bad("snapshots.max_fork", "exceeds limits.max_sandboxes")
+	}
+	if c.Snapshots.MaxTotalBytes < c.Limits.Files.MaxArchiveBytes {
+		bad("snapshots.max_total_bytes", "must hold at least one archive of limits.files.max_archive_bytes")
 	}
 	if poolTarget > c.Limits.MaxSandboxes {
 		bad("templates", "combined warm_pool must not exceed limits.max_sandboxes")

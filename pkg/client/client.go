@@ -49,6 +49,16 @@ type (
 	ExecResult = gen.ExecResult
 	// Health uses the generated v0.1 wire model.
 	Health = gen.Health
+	// Snapshot is a stored copy of a sandbox's /workspace and its creation spec.
+	Snapshot = gen.Snapshot
+	// SnapshotList is one page of snapshots.
+	SnapshotList = gen.SnapshotList
+	// ForkRequest asks for Count sandboxes restored from one snapshot.
+	ForkRequest = gen.ForkRequest
+	// ForkResult lists created sandboxes and the per-index failures.
+	ForkResult = gen.ForkResult
+	// ForkFailure describes one sandbox a fork could not create.
+	ForkFailure = gen.ForkFailure
 )
 
 // ExecRequest selects exactly one of Cmd or Shell. Stdin is encoded as base64.
@@ -452,5 +462,64 @@ func (c *Client) ListAudit(ctx context.Context, options AuditOptions) (AuditList
 	}
 	var out AuditList
 	err := c.json(ctx, "GET", "/audit", query, nil, &out)
+	return out, err
+}
+
+func snapshotResource(id string) (string, error) {
+	if _, err := resource(id); err != nil {
+		return "", err
+	}
+	return "/snapshots/" + id, nil
+}
+
+// CreateSnapshot archives a running sandbox's /workspace (nothing outside it, and no
+// running processes). Quiesce writers first: a workspace that changes while it is archived
+// can make the snapshot fail.
+func (c *Client) CreateSnapshot(ctx context.Context, sandboxID string) (Snapshot, error) {
+	var out Snapshot
+	p, err := resource(sandboxID)
+	if err == nil {
+		err = c.json(ctx, "POST", p+"/snapshots", nil, nil, &out)
+	}
+	return out, err
+}
+
+// ListSnapshots retrieves one page of snapshots visible to the current key. Only Limit and
+// Cursor of the options apply.
+func (c *Client) ListSnapshots(ctx context.Context, o ListOptions) (SnapshotList, error) {
+	var out SnapshotList
+	q := ListOptions{Limit: o.Limit, Cursor: o.Cursor}.query()
+	err := c.json(ctx, "GET", "/snapshots", q, nil, &out)
+	return out, err
+}
+
+// GetSnapshot retrieves one owned snapshot.
+func (c *Client) GetSnapshot(ctx context.Context, id string) (Snapshot, error) {
+	var out Snapshot
+	p, err := snapshotResource(id)
+	if err == nil {
+		err = c.json(ctx, "GET", p, nil, nil, &out)
+	}
+	return out, err
+}
+
+// DeleteSnapshot removes a snapshot and its stored archive.
+func (c *Client) DeleteSnapshot(ctx context.Context, id string) error {
+	p, err := snapshotResource(id)
+	if err != nil {
+		return err
+	}
+	return c.json(ctx, "DELETE", p, nil, nil, nil)
+}
+
+// Fork creates in.Count sandboxes from a snapshot. A nil error means at least one was created;
+// check ForkResult.Failures for the rest. When none could be created the first failure is
+// returned as a *Error. Fork is not retried automatically because it creates sandboxes.
+func (c *Client) Fork(ctx context.Context, snapshotID string, in ForkRequest) (ForkResult, error) {
+	var out ForkResult
+	p, err := snapshotResource(snapshotID)
+	if err == nil {
+		err = c.json(ctx, "POST", p+"/fork", nil, in, &out)
+	}
 	return out, err
 }

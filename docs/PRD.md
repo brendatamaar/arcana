@@ -156,6 +156,7 @@ File transfers use the supervised exec path, including ownership, concurrency, a
 - **FR-SN-3 [v0.3]** Create a sandbox `from_snapshot`: create from the snapshot's template, then stream the archive into `/workspace` and extract it inside the sandbox. The host never extracts snapshot archives.
 - **FR-SN-4 [v0.3]** Fork: create N sandboxes (capped by `snapshots.max_fork`) from one snapshot in one request, in parallel, with optional overrides.
 - **FR-SN-5 [v0.3]** List, get and delete snapshots; per-key count limit and global storage limit.
+Snapshots are owned by the key that created them; other non-admin keys receive `snapshot_not_found`. An archive is capped by the smaller of `limits.files.max_archive_bytes` and the remaining `snapshots.max_total_bytes` budget, and the count and byte budget of in-flight snapshots is reserved before streaming, so concurrent requests cannot overshoot. The host writes the opaque archive to a private temporary file, renames it into `data_dir/snapshots/<id>.tar.gz` (mode `0600`, directory `0700`) and records its size and SHA-256. Environment *values* are never stored, so only env keys are recorded and a restored sandbox starts without them. A restore re-hashes the archive on the descriptor it then streams and refuses a mismatch, then extracts inside the sandbox with `tar -xzf - --no-same-owner --no-same-permissions -C /workspace`. A failed restore destroys the new sandbox (reason `restore_failed`) rather than returning a partly populated one. Restores always cold-start (never from the warm pool) and report source `snapshot`. Startup reconciliation removes interrupted `.part` files and archives without a record. A workspace that changes while it is archived can make the snapshot fail (tar exits non-zero); callers should quiesce writers first.
 
 ### 7.8 Authentication and authorization (AU)
 
@@ -483,6 +484,31 @@ POST /v1/sandboxes/{id}/exec
 ```
 
 `stdout` and `stderr` are UTF-8 strings with invalid bytes replaced; clients needing exact bytes use the streaming endpoint (base64 frames).
+
+Snapshot, restore and fork (v0.3). `POST /v1/sandboxes/{id}/snapshots` takes no body and returns `201`:
+
+```json
+{
+  "id": "snp_h4k2m9q7w3x8c5v1b6n0",
+  "source_sandbox_id": "sbx_k3j9w2m4p8q1r7t5v6x0",
+  "template": "python",
+  "resources": { "cpus": 1, "memory_mb": 1024, "disk_mb": 2048, "pids": 256 },
+  "network": { "mode": "none", "allow": [] },
+  "env_keys": ["CI"],
+  "size_bytes": 18432011,
+  "sha256": "9f2c…",
+  "created_at": "2026-10-13T10:05:00Z"
+}
+```
+
+`GET /v1/snapshots` accepts `limit` and `cursor`, as sandbox listing does. Create from a snapshot with `from_snapshot` in `POST /v1/sandboxes`: `template` is still required and must equal the snapshot's template (otherwise `invalid_request`); `resources` and `network` default to the snapshot's recorded values and any explicit value wins.
+
+```http
+POST /v1/snapshots/{id}/fork
+{ "count": 3, "ttl_seconds": 900, "labels": { "attempt": "fork" } }
+```
+
+`count` is 1..`snapshots.max_fork`; `ttl_seconds`, `idle_timeout_seconds`, `resources`, `network`, `env` and `labels` are optional and apply to every member. Each member is an ordinary creation, so it is subject to the sandbox quotas and consumes one creation rate-limit token (a batch is charged at most the per-minute rate). Members are restored in parallel (at most 4 at a time). The response is `201` with `{"items": [Sandbox…], "failures": [{"index": 2, "code": "quota_exceeded", "message": "…"}]}` when at least one sandbox was created. When none could be created the response is the first failure's error. If the client disconnects, sandboxes already created are destroyed.
 
 ### 10.3 Error model
 

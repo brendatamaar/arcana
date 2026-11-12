@@ -181,6 +181,20 @@ terminal metadata after draining output. `files get` emits raw bytes and rejects
 `--json`; named local downloads must not already exist and are created with 0600.
 List commands return one page; use `--cursor` to continue.
 
+Snapshots capture a sandbox's `/workspace` (not processes, not files outside it,
+not environment values) and can be restored or forked into several sandboxes:
+
+```bash
+snapshot_id=$(arcana --json snapshot create "$sandbox_id" | jq -r .id)
+arcana fork "$snapshot_id" --count 3
+arcana sandbox create --from-snapshot "$snapshot_id"
+arcana snapshot list
+arcana snapshot rm "$snapshot_id"
+```
+
+A partial fork prints the sandboxes it created, lists the failures on stderr and
+exits non-zero. See [operations](docs/operations.md#snapshots) for limits.
+
 The [OpenAPI contract](api/openapi.yaml) describes `/v1` endpoints. Only
 `GET /v1/health` is unauthenticated. For direct HTTP exec:
 
@@ -214,8 +228,9 @@ Environment overrides use `ARCANA_` and `__`, for example
   extraction can leave partial sandbox files. No output content is stored in SQLite.
 - Allowlist egress supports only ports 80/443 without TLS interception, and
   `open` network mode does not exist.
-- Snapshot/fork, MCP, other SDKs and a dashboard are later-phase work. Planned
-  snapshots capture the workspace only, not running processes or the container.
+- Snapshots capture the workspace only, not running processes, the container or
+  environment values, and a workspace that changes while it is archived can make
+  the snapshot fail. MCP, other SDKs and a dashboard are later-phase work.
 
 ## Development and validation
 

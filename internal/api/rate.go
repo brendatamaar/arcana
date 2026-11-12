@@ -35,7 +35,12 @@ func newCreationLimiter(rate int, clock RateClock) *creationLimiter {
 	return &creationLimiter{rate: rate, clock: clock, buckets: make(map[string]bucket)}
 }
 
-func (l *creationLimiter) admit(key string) int64 {
+func (l *creationLimiter) admit(key string) int64 { return l.admitN(key, 1) }
+
+// admitN charges n tokens at once, capped at the bucket capacity so a batch larger than
+// the per-minute rate can still be admitted from a full bucket. It is all-or-nothing.
+func (l *creationLimiter) admitN(key string, n int) int64 {
+	cost := float64(min(max(n, 1), l.rate))
 	if key == "" || len(key) > 128 {
 		return 120
 	}
@@ -63,11 +68,11 @@ func (l *creationLimiter) admit(key string) int64 {
 	if now.After(state.seen) {
 		state.seen = now
 	}
-	if state.tokens >= 1 {
-		state.tokens--
+	if state.tokens >= cost {
+		state.tokens -= cost
 		l.buckets[key] = state
 		return 0
 	}
 	l.buckets[key] = state
-	return max(1, int64(math.Ceil((1-state.tokens)*60/float64(l.rate))))
+	return max(1, int64(math.Ceil((cost-state.tokens)*60/float64(l.rate))))
 }

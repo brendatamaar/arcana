@@ -318,11 +318,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Phase 3 — v0.3 Agent ecosystem and showcase
 
-### [ ] T3.1 Snapshots, restore and fork
+### [x] T3.1 Snapshots, restore and fork
 - **Deps:** T2.11 · **PRD:** FR-SN-1…5
 - **Do:** Migration for `snapshots`; snapshot by streaming `tar -czf - -C /workspace .` through exec into `data_dir/snapshots/<id>.tar.gz` with SHA-256; `from_snapshot` create path (extract inside sandbox); fork N in parallel with `errgroup` and partial-failure reporting; limits; endpoints; Go client and CLI support (`arcana snapshot create|list|rm`, `arcana fork`).
 - **Acceptance:** integration test: install a package into `/workspace`, snapshot, fork 3, package present in each, changes in one fork invisible to others.
 - **Verify:** `make test-integration`
+
+> Done: Added the `snapshots` migration/queries, `snapshots.*` config, OpenAPI endpoints (create/list/get/delete/fork, `from_snapshot`), orchestrator snapshot/restore/fork, Go client, and `arcana snapshot create|list|rm`, `arcana fork`, `sandbox create --from-snapshot`. Archives are streamed through exec into `data_dir/snapshots` (0600) with SHA-256, verified again on the streamed descriptor before in-sandbox extraction; count/byte budgets are reserved before streaming; failed restores destroy the sandbox (`restore_failed`); startup reconciliation prunes `.part`/unrecorded files. Fork reports per-index failures, charges one creation token per member and cleans up on disconnect. A unit test found a real race (exec transport closing stdin while the copy loop was still reading an `os.File`), fixed in `archiveInput`. Integration test on real runsc installs a package into a `/workspace` venv, snapshots, forks 3, checks the package in each, isolation between forks, corrupt-archive rejection and deletion. Hash-check mutation was caught by tests. make check, full serial make test-integration and make test-escape passed. Fork/list/get request shapes were not specified in PRD §10; defined there and in the Decision log. `web-check` not applicable before T3.7.
 
 ### [ ] T3.2 MCP server
 - **Deps:** T3.1 · **PRD:** FR-MC-1…3, FR-CL-4
@@ -477,6 +479,12 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-09 — Owner approved ESC-03 host cgroup CPU accounting with the unchanged 1500 ms ceiling, explicit 0.25 CPU quota and throttling proof, and unchanged attack/peer checks — guest getrusage diverges from controller accounting under runsc; no resource policy or ceiling changed — docs/spikes/005-cpu-accounting.md, PRD §12.4.
 
 - 2026-11-09 — Use the approved Apache-2.0 Prometheus client_golang v1.25.0 with an isolated registry, bounded labels and a separate listener; pin monitoring images by digest — reproducible self-hosting with explicit lifecycle ownership and no credentials in labels — T2.6, docs/compose-validation.md.
+
+- 2026-11-12 — Snapshots store opaque archives under `data_dir/snapshots` with a size/SHA-256 record; a restore re-hashes the archive on the descriptor it streams and extracts only inside the sandbox; env values are never stored; a failed restore destroys the new sandbox with reason `restore_failed`; restores bypass the warm pool — keeps AGENTS rule 4 (host never extracts), makes tampering detectable, and honours "env values are never persisted" — T3.1, PRD FR-SN-1…5.
+
+- 2026-11-12 — Fork returns `201` with `items` and per-index `failures` when at least one member was created, else the first failure's error; each member consumes one creation token and runs through the normal quota path; created members are destroyed if the client disconnects — PRD §10 only named the endpoint, so this defines its shape and keeps partial failure visible without leaking orphans — T3.1, PRD §10.2.
+
+- 2026-11-12 — Snapshot byte and count budgets are reserved before streaming (in-flight snapshots count) — concurrent requests cannot overshoot `snapshots.max_per_key` or `snapshots.max_total_bytes`; no new dependency was needed — T3.1.
 
 ## Open questions
 

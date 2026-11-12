@@ -125,3 +125,32 @@ func TestCreationRate_HeadersAuthAndNoRejectedResource(t *testing.T) {
 		t.Fatal("refill failed", response.Code)
 	}
 }
+
+func TestCreationLimiter_BatchIsAllOrNothingAndCappedAtCapacity(t *testing.T) {
+	clock := &rateTestClock{at: time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)}
+	limiter := newCreationLimiter(6, clock)
+	if limiter.admitN("a", 4) != 0 {
+		t.Fatal("batch within the bucket was refused")
+	}
+	// Two tokens remain: a batch of three must be refused without consuming them.
+	if retry := limiter.admitN("a", 3); retry != 10 {
+		t.Fatalf("retry %d", retry)
+	}
+	if limiter.admitN("a", 2) != 0 {
+		t.Fatal("refused batch consumed tokens")
+	}
+	if limiter.admitN("a", 1) == 0 {
+		t.Fatal("bucket should be empty")
+	}
+	// A batch larger than the bucket is charged the full capacity, so it can still pass once.
+	clock.at = clock.at.Add(time.Minute)
+	if limiter.admitN("a", 1000) != 0 {
+		t.Fatal("oversized batch could never be admitted")
+	}
+	if limiter.admitN("a", 1) == 0 {
+		t.Fatal("oversized batch was not charged the full capacity")
+	}
+	if limiter.admitN("b", 0) != 0 || limiter.admitN("b", -5) != 0 {
+		t.Fatal("non-positive batch must cost one token, not refuse")
+	}
+}

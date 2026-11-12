@@ -43,6 +43,12 @@ described in [escape v1](escape-v1.md) and runs on every commit with gVisor.
   reaped when it ends.
 - Noisy-neighbour effects between sandboxes are reduced, not eliminated.
 - Failed archive extraction can leave partial files in the sandbox.
+- Snapshots contain whatever the sandbox wrote to `/workspace`, including any
+  secrets it held there, and are stored unencrypted in `data_dir/snapshots`
+  (`0600`). Protect and back up `data_dir` accordingly. They are visible only to
+  the creating key and admin keys, and an archive is hash-verified before it is
+  restored. Snapshots capture the workspace only; they do not capture running
+  processes, files outside `/workspace`, or environment values.
 - Audit events are queued and can be lost in a crash before they are persisted.
 - Only ports 80 and 443 are supported for allowlisted egress, without TLS
   interception.

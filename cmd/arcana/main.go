@@ -33,7 +33,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().String("api-key", os.Getenv("ARCANA_API_KEY"), "API key (ARCANA_API_KEY)")
 	root.PersistentFlags().Bool("json", false, "Print structured JSON for scripting")
 	root.AddCommand(newKeysCommand(), newServeCommand(), newProxyCommand(), newProxyControlCommand())
-	root.AddCommand(newSandboxCommand(), newExecCommand(), newFilesCommand(), newDoctorCommand())
+	root.AddCommand(newSandboxCommand(), newExecCommand(), newFilesCommand(), newDoctorCommand(), newSnapshotCommand(), newForkCommand())
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print version, commit and build date",

@@ -72,6 +72,7 @@ type Service struct {
 	createGate  chan struct{}
 	execMu      sync.Mutex
 	activeExecs map[string]int
+	snaps       snapshotState
 }
 
 // New constructs an orchestrator with independent operator configuration.
@@ -90,11 +91,32 @@ func New(database *store.Store, driver runtime.Driver, cfg config.Config, clock 
 	if len(writers) > 0 {
 		recorder = writers[0]
 	}
-	return &Service{audit: recorder, store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int), pool: make(map[string][]runtime.Instance)}
+	return &Service{audit: recorder, store: database, driver: driver, cfg: cfg, clock: clock, createGate: make(chan struct{}, 1), activeExecs: make(map[string]int), pool: make(map[string][]runtime.Instance), snaps: snapshotState{pendingOwner: make(map[string]int)}}
 }
 
 // Create reserves quota before starting the instance and persists every outcome.
+// With FromSnapshot set it also restores the snapshot into /workspace; a failed restore
+// destroys the sandbox instead of returning a partially populated one.
 func (s *Service) Create(ctx context.Context, principal auth.Principal, request CreateRequest) (db.Sandbox, error) {
+	if request.FromSnapshot == "" {
+		return s.create(ctx, principal, request)
+	}
+	snap, err := s.GetSnapshot(ctx, principal, request.FromSnapshot)
+	if err != nil {
+		return db.Sandbox{}, err
+	}
+	merged, err := fromSnapshot(request, snap)
+	if err != nil {
+		return db.Sandbox{}, err
+	}
+	row, err := s.create(ctx, principal, merged)
+	if err != nil {
+		return db.Sandbox{}, err
+	}
+	return s.restore(ctx, principal, row, snap)
+}
+
+func (s *Service) create(ctx context.Context, principal auth.Principal, request CreateRequest) (db.Sandbox, error) {
 	plan, err := resolve(s.cfg, request)
 	if err != nil {
 		return db.Sandbox{}, err
@@ -108,7 +130,12 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, request 
 	case <-ctx.Done():
 		return db.Sandbox{}, ctx.Err()
 	}
-	pooled, available := s.acquirePool(plan)
+	// Restores need a fresh instance whose provenance is recorded, so they bypass the pool.
+	var pooled runtime.Instance
+	available := false
+	if plan.snapshot == "" {
+		pooled, available = s.acquirePool(plan)
+	}
 	if available {
 		id = pooled.SandboxID
 	}
@@ -116,6 +143,9 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, request 
 	plan.source = "cold"
 	if available {
 		plan.source = "pool"
+	}
+	if plan.snapshot != "" {
+		plan.source = "snapshot"
 	}
 	if !available {
 		if err := s.makePoolRoom(ctx); err != nil {
@@ -188,7 +218,7 @@ func (s *Service) reserve(ctx context.Context, p auth.Principal, id string, plan
 	labelData, _ := json.Marshal(labels)
 	networkAllow, _ := json.Marshal(plan.spec.NetworkAllow)
 	r := plan.spec.Resources
-	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: plan.source, Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, NetworkAllow: sql.NullString{String: string(networkAllow), Valid: true}, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now})
+	row, err := q.CreateSandbox(ctx, db.CreateSandboxParams{ID: id, OwnerKeyID: p.ID, Template: plan.template, Runtime: s.cfg.Runtime.Docker.OCIRuntime, State: string(Creating), Source: plan.source, Cpus: sql.NullFloat64{Float64: r.CPUs, Valid: true}, MemoryMb: sql.NullInt64{Int64: r.MemoryMB, Valid: true}, DiskMb: sql.NullInt64{Int64: r.DiskMB, Valid: true}, Pids: sql.NullInt64{Int64: r.PIDs, Valid: true}, NetworkMode: plan.spec.NetworkMode, NetworkAllow: sql.NullString{String: string(networkAllow), Valid: true}, EnvKeys: sql.NullString{String: string(envKeys), Valid: true}, Labels: sql.NullString{String: string(labelData), Valid: true}, CreatedAt: now, ExpiresAt: now.Add(time.Duration(plan.ttl) * time.Second), IdleTimeoutSeconds: plan.idle, LastActivityAt: now, FromSnapshotID: sql.NullString{String: plan.snapshot, Valid: plan.snapshot != ""}})
 	if err != nil {
 		return db.Sandbox{}, fmt.Errorf("reserving sandbox: %w", err)
 	}
@@ -240,7 +270,9 @@ func (s *Service) transition(ctx context.Context, row db.Sandbox, event Event, r
 	if principal, ok := auth.FromContext(ctx); ok {
 		actor = principal.ID
 	}
-	if next == Running {
+	// Snapshot restores record their own event once the workspace is populated, so the
+	// duration includes the restore.
+	if next == Running && row.Source != "snapshot" {
 		s.audit.Record("sandbox.created", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source, "duration_seconds": max(0, s.clock.Now().Sub(row.CreatedAt).Seconds())})
 	} else if terminal(next) {
 		s.audit.Record("sandbox.destroyed", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "reason": reason})

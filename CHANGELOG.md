@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add workspace snapshots, restore and fork: `POST /v1/sandboxes/{id}/snapshots`, `GET/DELETE /v1/snapshots`, `POST /v1/snapshots/{id}/fork` and `from_snapshot` on sandbox creation, with Go client methods and `arcana snapshot create|list|rm`, `arcana fork` and `sandbox create --from-snapshot`. Archives are streamed out and extracted only inside sandboxes, verified by SHA-256 on restore, and bounded by `snapshots.max_per_key`, `snapshots.max_total_bytes` and `snapshots.max_fork`. Environment values are never stored.
+
 ## [0.2.0] - 2026-11-09
 
 - Fix allowlist proxies recreated on restart keeping a stable MAC/IP on Docker 28 by setting them at container creation, and fail closed if Docker does not apply them.

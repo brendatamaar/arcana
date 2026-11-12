@@ -27,6 +27,8 @@ type CreateRequest struct {
 	Env, Labels                    map[string]string
 	NetworkAllow, NetworkPresets   []string
 	NetworkMode                    string
+	// FromSnapshot restores that snapshot's workspace into the new sandbox.
+	FromSnapshot string
 }
 
 type resolved struct {
@@ -34,6 +36,7 @@ type resolved struct {
 	ttl, idle int64
 	template  string
 	source    string
+	snapshot  string
 }
 
 func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
@@ -153,7 +156,7 @@ func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
 	if !allowedPath(workdir, cfg.Limits.Files.AllowedRoots) {
 		return resolved{}, fmt.Errorf("%w: template workdir outside allowed roots", ErrInvalid)
 	}
-	return resolved{spec: runtime.Spec{Image: template.Image, Resources: runtime.Resources{CPUs: resources.CPUs, MemoryMB: resources.MemoryMB, DiskMB: resources.DiskMB, PIDs: resources.PIDs}, Env: env, Labels: maps.Clone(request.Labels), WorkspaceBackend: cfg.Workspace.Backend, NetworkMode: network, NetworkAllow: allow, Workdir: path.Clean(workdir)}, ttl: ttl, idle: idle, template: template.Name}, nil
+	return resolved{spec: runtime.Spec{Image: template.Image, Resources: runtime.Resources{CPUs: resources.CPUs, MemoryMB: resources.MemoryMB, DiskMB: resources.DiskMB, PIDs: resources.PIDs}, Env: env, Labels: maps.Clone(request.Labels), WorkspaceBackend: cfg.Workspace.Backend, NetworkMode: network, NetworkAllow: allow, Workdir: path.Clean(workdir)}, ttl: ttl, idle: idle, template: template.Name, snapshot: request.FromSnapshot}, nil
 }
 
 func validateMap(values map[string]string, env bool) error {

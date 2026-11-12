@@ -69,3 +69,22 @@ SELECT EXISTS(SELECT 1 FROM execs WHERE sandbox_id = ? AND ended_at IS NULL);
 
 -- name: FailUnfinishedExecs :exec
 UPDATE execs SET ended_at = ?, cancelled = 1 WHERE sandbox_id = ? AND ended_at IS NULL;
+
+-- name: CreateSnapshot :one
+INSERT INTO snapshots (id,owner_key_id,source_sandbox_id,template,spec,path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?,?) RETURNING *;
+
+-- name: GetSnapshot :one
+SELECT * FROM snapshots WHERE id = ?;
+
+-- name: ListSnapshots :many
+SELECT * FROM snapshots WHERE id > ? AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner))
+ORDER BY id LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
+
+-- name: DeleteSnapshot :execrows
+DELETE FROM snapshots WHERE id = ?;
+
+-- name: CountSnapshots :one
+SELECT count(*) FROM snapshots WHERE sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner);
+
+-- name: SumSnapshotBytes :one
+SELECT CAST(COALESCE(SUM(size_bytes),0) AS INTEGER) FROM snapshots;

@@ -99,6 +99,14 @@ exceed `limits.max_sandboxes`.
 
 Template defaults never exceed `limits.maximums`.
 
+## Snapshots
+
+| Key | Default | Meaning |
+|---|---|---|
+| `snapshots.max_per_key` | `20` | Stored snapshots per API key. Creation beyond the limit fails with `quota_exceeded`. |
+| `snapshots.max_total_bytes` | `10737418240` | Total compressed bytes under `data_dir/snapshots`. Must be at least `limits.files.max_archive_bytes`, which also caps each snapshot. |
+| `snapshots.max_fork` | `10` | Largest `count` for one fork request. Must not exceed `limits.max_sandboxes`. |
+
 ## Audit and logging
 
 | Key | Default | Meaning |

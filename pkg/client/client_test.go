@@ -121,6 +121,7 @@ func fixture(t *testing.T) (*client.Client, *client.Client, *client.Client) {
 		t.Fatal(err)
 	}
 	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
 	driver := &helperDriver{Driver: fake.New()}
 	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
 	server := httptest.NewServer(api.New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.Limits.Files, service))
@@ -382,5 +383,50 @@ func TestRateLimitedError_ExposesRetryWithoutAutomaticRetry(t *testing.T) {
 	var failure *client.Error
 	if !errors.As(err, &failure) || failure.Code != "rate_limited" || failure.RetryAfterSeconds != 2 || calls != 1 {
 		t.Fatal(err, calls)
+	}
+}
+
+func TestClient_SnapshotForkAndRestoreAgainstRealAPI(t *testing.T) {
+	_, owner, other := fixture(t)
+	ctx := context.Background()
+	source, err := owner.CreateSandbox(ctx, client.CreateSandboxRequest{Template: "base"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := owner.CreateSnapshot(ctx, source.Id)
+	if err != nil || snap.SourceSandboxId != source.Id || snap.SizeBytes != int64(len("opaque-gzip")) {
+		t.Fatalf("%+v %v", snap, err)
+	}
+	if got, err := owner.GetSnapshot(ctx, snap.Id); err != nil || got.Sha256 != snap.Sha256 {
+		t.Fatal(got, err)
+	}
+	var failure *client.Error
+	if _, err = other.GetSnapshot(ctx, snap.Id); !errors.As(err, &failure) || failure.Code != "snapshot_not_found" {
+		t.Fatal("foreign snapshot visible", err)
+	}
+	if _, err = owner.GetSnapshot(ctx, "../x"); err == nil {
+		t.Fatal("unsafe snapshot ID accepted")
+	}
+	page, err := owner.ListSnapshots(ctx, client.ListOptions{Limit: 10})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatal(page, err)
+	}
+	from := snap.Id
+	restored, err := owner.CreateSandbox(ctx, client.CreateSandboxRequest{Template: "base", FromSnapshot: &from})
+	if err != nil || restored.Source != "snapshot" {
+		t.Fatal(restored, err)
+	}
+	forked, err := owner.Fork(ctx, snap.Id, client.ForkRequest{Count: 2})
+	if err != nil || len(forked.Items) != 2 || len(forked.Failures) != 0 {
+		t.Fatalf("%+v %v", forked, err)
+	}
+	if _, err = owner.Fork(ctx, snap.Id, client.ForkRequest{Count: 99}); !errors.As(err, &failure) || failure.Code != "invalid_request" {
+		t.Fatal("oversized fork accepted", err)
+	}
+	if err = owner.DeleteSnapshot(ctx, snap.Id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.GetSnapshot(ctx, snap.Id); !errors.As(err, &failure) || failure.StatusCode != 404 {
+		t.Fatal(err)
 	}
 }

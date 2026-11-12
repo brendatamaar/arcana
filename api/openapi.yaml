@@ -39,6 +39,112 @@ components:
         next_cursor:
           type: string
           nullable: true
+    Snapshot:
+      type: object
+      additionalProperties: false
+      required: [id, source_sandbox_id, template, resources, network, env_keys, size_bytes, sha256, created_at]
+      description: Compressed copy of a sandbox's /workspace plus its creation spec. Environment values are never stored.
+      properties:
+        id:
+          type: string
+        source_sandbox_id:
+          type: string
+        template:
+          type: string
+        resources:
+          $ref: '#/components/schemas/Resources'
+        network:
+          $ref: '#/components/schemas/Network'
+        env_keys:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        created_at:
+          type: string
+          format: date-time
+    SnapshotList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Snapshot'
+        next_cursor:
+          type: string
+          nullable: true
+    ForkRequest:
+      type: object
+      additionalProperties: false
+      required: [count]
+      description: Overrides apply to every sandbox created by the fork.
+      properties:
+        count:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        ttl_seconds:
+          type: integer
+          format: int64
+          minimum: 1
+        idle_timeout_seconds:
+          type: integer
+          format: int64
+          minimum: 1
+        resources:
+          $ref: '#/components/schemas/Resources'
+        network:
+          $ref: '#/components/schemas/Network'
+        env:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: string
+        labels:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: string
+    ForkFailure:
+      type: object
+      additionalProperties: false
+      required: [index, code, message]
+      properties:
+        index:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Zero-based position of the failed sandbox in the request.
+        code:
+          type: string
+        message:
+          type: string
+    ForkResult:
+      type: object
+      additionalProperties: false
+      required: [items, failures]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Sandbox'
+        failures:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ForkFailure'
     Template:
       type: object
       additionalProperties: false
@@ -98,6 +204,13 @@ components:
             type: string
           maxProperties: 100
           type: object
+        from_snapshot:
+          description: >-
+            Snapshot to restore into /workspace. The template must match the snapshot's template;
+            resources and network default to the snapshot's recorded values.
+          maxLength: 128
+          nullable: true
+          type: string
         idle_timeout_seconds:
           format: int64
           minimum: 1
@@ -497,6 +610,214 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
         '403':
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/snapshots:
+    post:
+      operationId: createSnapshot
+      summary: Snapshot a running sandbox's /workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+          description: Snapshot stored
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/snapshots:
+    get:
+      operationId: listSnapshots
+      summary: List snapshots visible to the key
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            default: 100
+            format: int64
+            maximum: 1000
+            minimum: 1
+            type: integer
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotList'
+          description: Success
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}:
+    get:
+      operationId: getSnapshot
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+          description: Success
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteSnapshot
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Success
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}/fork:
+    post:
+      operationId: forkSnapshot
+      summary: Create N sandboxes from one snapshot
+      description: >-
+        Returns 201 when at least one sandbox was created; failures lists the others.
+        When none could be created the response is the error of the first failure.
+        Each requested sandbox consumes one sandbox-creation rate-limit token (at most the per-minute rate).
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForkRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForkResult'
+          description: At least one sandbox created
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          description: Sandbox quota or creation rate exceeded
+          headers:
+            Retry-After:
+              description: Seconds until retry; supplied for rate_limited responses
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
           $ref: '#/components/responses/Error'
   /v1/templates:
     get:

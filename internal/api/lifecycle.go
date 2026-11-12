@@ -26,6 +26,10 @@ func sandboxError(err error) *apierr.Error {
 		e = apierr.NewInvalidTemplate("unknown template")
 	case errors.Is(err, orchestrator.ErrNotFound):
 		e = apierr.NewSandboxNotFound("sandbox not found")
+	case errors.Is(err, orchestrator.ErrSnapshotNotFound):
+		e = apierr.NewSnapshotNotFound("snapshot not found")
+	case errors.Is(err, orchestrator.ErrSnapshotCorrupt):
+		e = apierr.NewInternal("snapshot archive failed verification")
 	case errors.Is(err, orchestrator.ErrNotRunning):
 		e = apierr.NewSandboxNotRunning("sandbox not running")
 	case errors.Is(err, orchestrator.ErrQuota):
@@ -84,6 +88,9 @@ func (s *Server) CreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := orchestrator.CreateRequest{Template: request.Template, TTLSeconds: request.TtlSeconds, IdleTimeoutSeconds: request.IdleTimeoutSeconds}
+	if request.FromSnapshot != nil {
+		input.FromSnapshot = *request.FromSnapshot
+	}
 	if request.Env != nil {
 		input.Env = *request.Env
 	}
