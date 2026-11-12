@@ -12,10 +12,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/brendatamaar/arcana/internal/api"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -124,7 +126,8 @@ func fixture(t *testing.T) (*client.Client, *client.Client, *client.Client) {
 	cfg.DataDir = t.TempDir()
 	driver := &helperDriver{Driver: fake.New()}
 	service := orchestrator.New(database, driver, cfg, orchestrator.SystemClock{})
-	server := httptest.NewServer(api.New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.Limits.Files, service))
+	service.WithEvents(events.NewBus(orchestrator.SystemClock{}, cfg.UI.EventBuffer, 10))
+	server := httptest.NewServer(api.New(keys, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg.Limits.Files, service, api.Options{Version: "v-test", HeartbeatInterval: 50 * time.Millisecond}))
 	t.Cleanup(server.Close)
 	makeClient := func(key string) *client.Client {
 		c, err := client.New(server.URL, key, client.Options{HTTPClient: server.Client()})
@@ -428,5 +431,119 @@ func TestClient_SnapshotForkAndRestoreAgainstRealAPI(t *testing.T) {
 	}
 	if _, err = owner.GetSnapshot(ctx, snap.Id); !errors.As(err, &failure) || failure.StatusCode != 404 {
 		t.Fatal(err)
+	}
+}
+
+func nextEvent(t *testing.T, stream *client.EventStream, want string) client.Event {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		event, err := stream.Next()
+		if err != nil {
+			t.Fatalf("waiting for %s: %v", want, err)
+		}
+		if event.Type == want {
+			return event
+		}
+	}
+	t.Fatalf("never saw %s", want)
+	return client.Event{}
+}
+
+func TestClient_EventsResumeResetAndOutputTail(t *testing.T) {
+	_, owner, other := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	stream, err := owner.Events(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stream.Close() }()
+	row, err := owner.CreateSandbox(ctx, client.CreateSandboxRequest{Template: "base"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := nextEvent(t, stream, "sandbox.created")
+	if created.SandboxID != row.Id || created.ID == "" || created.At.IsZero() {
+		t.Fatalf("%+v", created)
+	}
+	result, err := owner.Exec(ctx, row.Id, client.ExecRequest{Cmd: []string{"echo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended := nextEvent(t, stream, "exec.ended")
+	if !strings.Contains(string(ended.Data), result.ExecId) || strings.Contains(string(ended.Data), "output") && strings.Contains(string(ended.Data), "diagnostic") {
+		t.Fatalf("%s", ended.Data)
+	}
+
+	// Resuming from the creation event replays what followed it, with no gap.
+	resumed, err := owner.Events(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resumed.Close() }()
+	if got := nextEvent(t, resumed, "exec.started"); got.SandboxID != row.Id {
+		t.Fatalf("%+v", got)
+	}
+	reset, err := owner.Events(ctx, "999999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reset.Close() }()
+	if _, err = reset.Next(); !errors.Is(err, client.ErrReset) {
+		t.Fatalf("a stale Last-Event-ID must reset: %v", err)
+	}
+	if _, err = owner.Events(ctx, "not-a-number"); err == nil {
+		t.Fatal("bad Last-Event-ID accepted")
+	}
+	// Another key neither sees these events nor the output.
+	foreign, err := other.Events(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = foreign.Close() }()
+	if _, err = other.ExecOutput(ctx, row.Id, result.ExecId); err == nil {
+		t.Fatal("foreign key tailed another's exec")
+	}
+
+	tail, err := owner.ExecOutput(ctx, row.Id, result.ExecId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tail.Close() }()
+	var out, errText string
+	var end *client.OutputEnd
+	for end == nil {
+		item, nextErr := tail.Next()
+		if nextErr != nil {
+			t.Fatal(nextErr)
+		}
+		switch item.Kind {
+		case "output":
+			if item.Stream == "stderr" {
+				errText += string(item.Data)
+			} else {
+				out += string(item.Data)
+			}
+		case "end":
+			end = item.End
+		}
+	}
+	if out != "output" || errText != "diagnostic" || end.ExitCode == nil || *end.ExitCode != 0 || end.Expired {
+		t.Fatalf("%q %q %+v", out, errText, end)
+	}
+	if _, err = tail.Next(); !errors.Is(err, io.EOF) {
+		t.Fatalf("stream must end after the end item: %v", err)
+	}
+	if _, err = owner.ExecOutput(ctx, "../x", "exe_x"); err == nil {
+		t.Fatal("unsafe ID accepted")
+	}
+
+	execs, err := owner.ListExecs(ctx, row.Id, client.ListOptions{Limit: 10})
+	if err != nil || len(execs.Items) != 1 || execs.Items[0].Id != result.ExecId || execs.Items[0].Cmd == nil {
+		t.Fatalf("%+v %v", execs, err)
+	}
+	overview, err := owner.GetOverview(ctx)
+	if err != nil || overview.Version != "v-test" || len(overview.SandboxesByTemplate) != 1 {
+		t.Fatalf("%+v %v", overview, err)
 	}
 }

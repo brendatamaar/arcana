@@ -107,6 +107,20 @@ Template defaults never exceed `limits.maximums`.
 | `snapshots.max_total_bytes` | `10737418240` | Total compressed bytes under `data_dir/snapshots`. Must be at least `limits.files.max_archive_bytes`, which also caps each snapshot. |
 | `snapshots.max_fork` | `10` | Largest `count` for one fork request. Must not exceed `limits.max_sandboxes`. |
 
+## Dashboard sessions and live streams
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ui.enabled` | `true` | Serve the dashboard backend: sessions, `/v1/events` and exec output tails. |
+| `ui.session_ttl_seconds` | `43200` | Lifetime of a dashboard session cookie, up to 30 days. |
+| `ui.allowed_origins` | none | Extra `scheme://host[:port]` origins allowed to make cookie-authenticated requests, needed when Arcana is served under another hostname (for example behind a reverse proxy that rewrites `Host`). |
+| `ui.event_buffer` | `1000` | Recent events kept so a reconnecting client can resume with `Last-Event-ID`. |
+| `limits.exec.tail_buffer_bytes` | `262144` | In-memory output kept per exec for the live tail (never written to disk). |
+| `limits.exec.tail_retention_seconds` | `300` | How long an exec's output stays readable after it ends. |
+| `limits.exec.max_tail_subscribers` | `10` | Concurrent output-tail readers per exec. |
+
+See [events and sessions](events.md).
+
 ## Audit and logging
 
 | Key | Default | Meaning |

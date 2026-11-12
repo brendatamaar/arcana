@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/brendatamaar/arcana/internal/auth"
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/helper/protocol"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -88,16 +89,29 @@ func (s *Service) executePlan(ctx context.Context, p auth.Principal, id string, 
 	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started}); err != nil {
 		return ExecResult{}, fmt.Errorf("recording exec start: %w", err)
 	}
-	s.audit.Record("exec.started", p.ID, id, map[string]any{"exec_id": execID, "command": json.RawMessage(plan.command), "is_shell": plan.shell, "cwd": plan.cwd})
-	return s.superviseExec(ctx, p, row, execID, started, plan, stream, files)
+	// argv is stored as JSON; a shell string is stored raw and must be quoted to be valid metadata,
+	// otherwise the whole event is rejected and the command goes unaudited.
+	commandJSON := json.RawMessage(plan.command)
+	if plan.shell {
+		commandJSON, _ = json.Marshal(plan.command)
+	}
+	s.audit.Record("exec.started", p.ID, id, map[string]any{"exec_id": execID, "command": commandJSON, "is_shell": plan.shell, "cwd": plan.cwd})
+	// Live views cover user commands. File transfers and watchdog scans are recorded in the exec
+	// table but never streamed: their bytes are file contents or internal bookkeeping.
+	var tail *events.Tail
+	if files == nil && !plan.maintenance {
+		tail = s.tails.Open(execID, row.OwnerKeyID, id)
+		s.events.Publish(events.ExecStarted, row.OwnerKeyID, id, map[string]any{"exec_id": execID, "is_shell": plan.shell, "cwd": plan.cwd, "tty": tty == 1, "started_at": started.UTC()})
+	}
+	return s.superviseExec(ctx, p, row, execID, started, plan, stream, files, tail)
 }
 
-func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan, stream *StreamOptions, files *fileIO) (ExecResult, error) {
+func (s *Service) superviseExec(ctx context.Context, p auth.Principal, row db.Sandbox, id string, started time.Time, plan execPlan, stream *StreamOptions, files *fileIO, tail *events.Tail) (ExecResult, error) {
 	owned, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	timer := s.clock.NewTimer(time.Duration(plan.timeout+10) * time.Second)
 	defer timer.Stop()
-	output := &capture{limit: s.cfg.Limits.Exec.MaxOutputBytes}
+	output := &capture{limit: s.cfg.Limits.Exec.MaxOutputBytes, tail: tail}
 	if stream != nil {
 		output.observer = stream.Observer
 	}
@@ -229,6 +243,12 @@ func (s *Service) finishExec(ctx context.Context, row db.Sandbox, id string, sta
 		actor = principal.ID
 	}
 	s.audit.Record("exec.ended", actor, row.ID, map[string]any{"exec_id": id, "template": row.Template, "result": kind, "duration_seconds": float64(result.DurationMS) / 1000})
+	// File transfers (sink set) and watchdog scans never reach live views, matching executePlan.
+	if !maintenance && output.sink == nil {
+		end := events.End{ExitCode: result.ExitCode, Known: outcome.status != nil, TimedOut: result.TimedOut, Truncated: result.Truncated, Cancelled: result.Cancelled}
+		s.tails.Finish(output.tail, end)
+		s.events.Publish(events.ExecEnded, row.OwnerKeyID, row.ID, map[string]any{"exec_id": id, "result": kind, "exit_code": exitCodeOrNil(end), "timed_out": end.TimedOut, "cancelled": end.Cancelled, "truncated": end.Truncated, "duration_ms": result.DurationMS})
+	}
 	if failure := errors.Join(outcome.err, err, activityErr, output.sinkErr); failure != nil {
 		return result, errors.Join(failure, ctx.Err())
 	}
@@ -371,4 +391,11 @@ func parseStatus(data []byte, id string, transport int) (protocol.Status, error)
 		return status, errors.New("untrusted helper completion")
 	}
 	return status, nil
+}
+
+func exitCodeOrNil(end events.End) any {
+	if !end.Known {
+		return nil
+	}
+	return end.ExitCode
 }

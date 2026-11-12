@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -36,6 +37,7 @@ type Config struct {
 	Network   Network    `koanf:"network"`
 	Templates []Template `koanf:"templates"`
 	Snapshots Snapshots  `koanf:"snapshots"`
+	UI        UI         `koanf:"ui"`
 	Audit     Audit      `koanf:"audit"`
 	Log       Log        `koanf:"log"`
 }
@@ -94,6 +96,9 @@ type Exec struct {
 	MaxTimeoutSeconds       int   `koanf:"max_timeout_seconds"`
 	MaxOutputBytes          int64 `koanf:"max_output_bytes"`
 	MaxConcurrentPerSandbox int   `koanf:"max_concurrent_per_sandbox"`
+	TailBufferBytes         int64 `koanf:"tail_buffer_bytes"`
+	TailRetentionSeconds    int   `koanf:"tail_retention_seconds"`
+	MaxTailSubscribers      int   `koanf:"max_tail_subscribers"`
 }
 
 // Files bounds file transfer and allowed paths.
@@ -139,6 +144,14 @@ type Snapshots struct {
 	MaxFork       int   `koanf:"max_fork"`
 }
 
+// UI configures dashboard sessions and the live event stream.
+type UI struct {
+	Enabled           bool     `koanf:"enabled"`
+	SessionTTLSeconds int      `koanf:"session_ttl_seconds"`
+	AllowedOrigins    []string `koanf:"allowed_origins"`
+	EventBuffer       int      `koanf:"event_buffer"`
+}
+
 // Audit configures retention of metadata-only events.
 type Audit struct {
 	RetentionDays int `koanf:"retention_days"`
@@ -156,11 +169,12 @@ func Default() Config {
 		Server:    Server{"127.0.0.1:7070", "127.0.0.1:9090", 30, false},
 		DataDir:   "/var/lib/arcana",
 		Runtime:   Runtime{"docker", Docker{"unix:///var/run/docker.sock", "runsc", false}},
-		Limits:    Limits{20, 10, 30, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
+		Limits:    Limits{20, 10, 30, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8, 262144, 300, 10}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
 		Templates: []Template{{Name: "base", Image: "arcana-base:local"}},
 		Snapshots: Snapshots{20, 10737418240, 10},
+		UI:        UI{Enabled: true, SessionTTLSeconds: 43200, EventBuffer: 1000},
 		Audit:     Audit{30},
 		Log:       Log{"info", "json"},
 	}
@@ -332,6 +346,30 @@ func (c Config) Validate() error {
 		compareResources(t.Resources, c.Limits.Maximums, field+".resources", bad)
 		if t.Workdir != "" && !path.IsAbs(t.Workdir) {
 			bad(field+".workdir", "must be absolute")
+		}
+	}
+	if c.Limits.Exec.TailBufferBytes > 16<<20 {
+		bad("limits.exec.tail_buffer_bytes", "must be at most 16 MiB")
+	}
+	if c.Limits.Exec.TailRetentionSeconds > 86400 {
+		bad("limits.exec.tail_retention_seconds", "must be at most 86400")
+	}
+	if c.Limits.Exec.MaxTailSubscribers > 1000 {
+		bad("limits.exec.max_tail_subscribers", "must be at most 1000")
+	}
+	if c.UI.SessionTTLSeconds > 30*86400 {
+		bad("ui.session_ttl_seconds", "must be at most 30 days")
+	}
+	if c.UI.EventBuffer > 100000 {
+		bad("ui.event_buffer", "must be at most 100000")
+	}
+	if len(c.UI.AllowedOrigins) > 20 {
+		bad("ui.allowed_origins", "at most 20 origins")
+	}
+	for _, origin := range c.UI.AllowedOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.User != nil {
+			bad("ui.allowed_origins", "each origin must be scheme://host[:port] with no path")
 		}
 	}
 	if c.Snapshots.MaxFork > c.Limits.MaxSandboxes {

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/brendatamaar/arcana/internal/auth"
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/store/db"
 )
@@ -286,6 +287,7 @@ func (s *Service) restore(ctx context.Context, p auth.Principal, row db.Sandbox,
 		destroyErr := s.Destroy(cleanup, p, row.ID, "restore_failed")
 		return db.Sandbox{}, errors.Join(err, destroyErr)
 	}
+	s.events.Publish(events.SandboxCreated, row.OwnerKeyID, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source})
 	s.audit.Record("sandbox.created", p.ID, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source, "from_snapshot": snap.ID, "duration_seconds": max(0, s.clock.Now().Sub(row.CreatedAt).Seconds())})
 	return s.Get(ctx, p, row.ID)
 }

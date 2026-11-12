@@ -84,6 +84,15 @@ type SandboxTransition struct {
 	Reason    sql.NullString
 }
 
+type Session struct {
+	ID         string
+	KeyID      string
+	TokenHash  []byte
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastSeenAt sql.NullTime
+}
+
 type Snapshot struct {
 	ID              string
 	OwnerKeyID      string

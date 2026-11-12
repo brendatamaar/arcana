@@ -45,9 +45,10 @@ type Key struct {
 
 // Service owns local key operations.
 type Service struct {
-	audit *audit.Writer
-	store *store.Store
-	clock Clock
+	audit    *audit.Writer
+	store    *store.Store
+	clock    Clock
+	sessions *SessionPolicy
 }
 
 // New constructs a service with an explicit clock.

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add the dashboard backend: cookie sessions (`POST /v1/sessions`, read-only by design), the `/v1/events` Server-Sent Events stream with resume, `/v1/overview`, exec history, and an in-memory exec output tail, with `ui.*` and `limits.exec.tail_*` settings, live metrics, Go client support and escape tests ESC-22/ESC-23.
+- Fix `exec.started` audit events being silently dropped for shell commands.
+
 - Add `arcana bench` (cold create, warm-pool acquire, exec overhead, density, snapshot/restore/fork) with JSON and Markdown output and PRD target verdicts, a chart script, and docs/benchmarks.md with a first measured run.
 
 - Add `examples/fix-agent`, a reference coding agent (OpenAI-compatible endpoint, Ollama by default) with run, eval and verify-fixtures commands, step/token budgets, hidden-test judging and a `--parallel N` snapshot-and-fork mode, plus ten verified buggy fixtures and `make eval-agent`. No real-model results are recorded yet (docs/agent-results.md).

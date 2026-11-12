@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/runtime"
 )
@@ -26,7 +27,13 @@ func (s *Service) acquirePool(plan resolved) (runtime.Instance, bool) {
 	}
 	item := items[len(items)-1]
 	s.pool[plan.template] = items[:len(items)-1]
+	defer s.publishPool(plan.template, len(items)-1)
 	return item, true
+}
+
+// publishPool announces a pool level change; the bus never blocks, so holding the pool lock is safe.
+func (s *Service) publishPool(template string, available int) {
+	s.events.Publish(events.PoolChanged, "", "", map[string]any{"template": template, "available": available})
 }
 
 // PoolAvailable returns a copy suitable for metrics collectors.
@@ -85,7 +92,9 @@ func (s *Service) FillPool(ctx context.Context) error {
 		}
 		s.poolMu.Lock()
 		s.pool[template.Name] = append(s.pool[template.Name], instance)
+		level := len(s.pool[template.Name])
 		s.poolMu.Unlock()
+		s.publishPool(template.Name, level)
 		return nil
 	}
 	return nil
@@ -143,12 +152,14 @@ func (s *Service) makePoolRoom(ctx context.Context) error {
 	}
 	var evicted runtime.Instance
 	var evictedTemplate string
+	level := 0
 	if int(active)+total >= s.cfg.Limits.MaxSandboxes {
 		for name, items := range s.pool {
 			if len(items) > 0 {
 				evicted = items[len(items)-1]
 				evictedTemplate = name
 				s.pool[name] = items[:len(items)-1]
+				level = len(items) - 1
 				break
 			}
 		}
@@ -157,6 +168,7 @@ func (s *Service) makePoolRoom(ctx context.Context) error {
 	if evicted.ID == "" {
 		return nil
 	}
+	s.publishPool(evictedTemplate, level)
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	err = s.driver.Destroy(cleanup, evicted.ID)

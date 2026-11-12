@@ -2,7 +2,8 @@
 
 Arcana records metadata for key creation/revocation, sandbox lifecycle, exec
 start/end, file writes/deletes, archive uploads, snapshot creation/deletion
-(`snapshot.created`, `snapshot.deleted`, with the snapshot ID and size) and
+(`snapshot.created`, `snapshot.deleted`, with the snapshot ID and size), dashboard logins
+(`session.created`, with the session ID, never the token) and
 allowlist proxy decisions. A sandbox restored from a snapshot reports
 `from_snapshot` in its `sandbox.created` event, recorded after the restore
 completes. File and

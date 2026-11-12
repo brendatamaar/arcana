@@ -107,3 +107,34 @@ func TestMetrics_HTTPPreservesWebSocketHijacking(t *testing.T) {
 		t.Fatal(string(body), err)
 	}
 }
+
+func TestMetrics_LiveDashboardGaugesFollowTheirSources(t *testing.T) {
+	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "live.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	m := New(db, config.Default(), func() map[string]int { return nil }, func() audit.Stats { return audit.Stats{} })
+	scrape := func() string {
+		response := httptest.NewRecorder()
+		m.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+		return response.Body.String()
+	}
+	body := scrape()
+	for _, want := range []string{"arcana_ui_sessions_active 0", `arcana_event_subscribers{stream="events"} 0`, `arcana_event_subscribers{stream="exec_output"} 0`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("before connecting sources, %q missing:\n%s", want, body)
+		}
+	}
+	m.SetLiveSources(LiveSources{
+		Sessions:              func(context.Context) (int64, error) { return 4, nil },
+		EventSubscribers:      func() int { return 2 },
+		ExecOutputSubscribers: func() int { return 7 },
+	})
+	body = scrape()
+	for _, want := range []string{"arcana_ui_sessions_active 4", `arcana_event_subscribers{stream="events"} 2`, `arcana_event_subscribers{stream="exec_output"} 7`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("%q missing:\n%s", want, body)
+		}
+	}
+}

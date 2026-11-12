@@ -31,6 +31,14 @@ described in [escape v1](escape-v1.md) and runs on every commit with gVisor.
 - Keep `data_dir` at `0700`; it holds the key database.
 - Run `arcana doctor` after Docker, kernel or gVisor upgrades.
 
+## Dashboard sessions
+
+Browser sessions are cookie-based and deliberately weaker than API keys: a session cookie can only read
+(`GET`/`HEAD`) and log out, and only for requests that provably come from Arcana's own origin, so a malicious
+website cannot use a victim's cookie to change anything or read event and output streams. Sessions are
+`HttpOnly`, `SameSite=Strict`, stored hashed, expire after `ui.session_ttl_seconds` and die with their key.
+See [events and sessions](events.md). Escape tests ESC-22 and ESC-23 cover this on real sandboxes.
+
 ## Known limitations
 
 - Hostile code still shares a host kernel with Docker; gVisor shrinks but does
@@ -43,6 +51,8 @@ described in [escape v1](escape-v1.md) and runs on every commit with gVisor.
   reaped when it ends.
 - Noisy-neighbour effects between sandboxes are reduced, not eliminated.
 - Failed archive extraction can leave partial files in the sandbox.
+- Exec output tails hold up to `limits.exec.tail_buffer_bytes` of recent output per exec in memory for
+  `tail_retention_seconds` after it ends (never on disk); anyone who can read the process memory can read it.
 - Snapshots contain whatever the sandbox wrote to `/workspace`, including any
   secrets it held there, and are stored unencrypted in `data_dir/snapshots`
   (`0600`). Protect and back up `data_dir` accordingly. They are visible only to

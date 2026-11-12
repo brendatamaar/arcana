@@ -145,6 +145,144 @@ components:
           maxItems: 1000
           items:
             $ref: '#/components/schemas/ForkFailure'
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, expires_at]
+      description: A dashboard browser session. Its token is delivered only as an HttpOnly cookie.
+      properties:
+        id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    ExecRecord:
+      type: object
+      additionalProperties: false
+      required: [id, sandbox_id, cwd, tty, started_at, cancelled]
+      description: Metadata of one exec. Output is never stored; see the exec output stream.
+      properties:
+        id:
+          type: string
+        sandbox_id:
+          type: string
+        cmd:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: argv when the exec was given as an array.
+        shell:
+          type: string
+          nullable: true
+          description: The shell string when the exec used the shell field.
+        cwd:
+          type: string
+        tty:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        exit_code:
+          type: integer
+          nullable: true
+          description: The command's real exit status; null while running or when it could not be confirmed.
+        timed_out:
+          type: boolean
+          nullable: true
+        cancelled:
+          type: boolean
+        truncated:
+          type: boolean
+          nullable: true
+        stdout_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        stderr_bytes:
+          type: integer
+          format: int64
+          nullable: true
+    ExecList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ExecRecord'
+        next_cursor:
+          type: string
+          nullable: true
+    TemplateCount:
+      type: object
+      additionalProperties: false
+      required: [template, count]
+      properties:
+        template:
+          type: string
+        count:
+          type: integer
+          format: int64
+    PoolFill:
+      type: object
+      additionalProperties: false
+      required: [template, available, target]
+      properties:
+        template:
+          type: string
+        available:
+          type: integer
+          format: int64
+        target:
+          type: integer
+          format: int64
+    Termination:
+      type: object
+      additionalProperties: false
+      required: [id, template, state, ended_at]
+      properties:
+        id:
+          type: string
+        template:
+          type: string
+        state:
+          $ref: '#/components/schemas/SandboxState'
+        reason:
+          type: string
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+    Overview:
+      type: object
+      additionalProperties: false
+      required: [version, runtime, sandboxes_by_template, pool, recent_terminations]
+      description: Admin keys see installation-wide numbers; other keys see their own, and no pool fill.
+      properties:
+        version:
+          type: string
+        runtime:
+          type: string
+        sandboxes_by_template:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateCount'
+        pool:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolFill'
+        recent_terminations:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Termination'
     Template:
       type: object
       additionalProperties: false
@@ -568,6 +706,15 @@ components:
     bearerAuth:
       scheme: bearer
       type: http
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: arcana_session
+      description: >-
+        Dashboard session cookie (HttpOnly, SameSite=Strict). It authorizes only GET and HEAD requests
+        and DELETE /v1/sessions/current, and only for requests that carry an Origin matching this
+        server or ui.allowed_origins (or, for GET, Sec-Fetch-Site: same-origin). Any other request
+        authenticated only by the cookie is rejected with 403 forbidden.
 info:
   title: Arcana API
   version: 0.1.0
@@ -813,6 +960,267 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/sessions:
+    post:
+      operationId: createSession
+      summary: Exchange the API key for a dashboard session cookie
+      description: >-
+        Authenticated with an API key (Authorization header); a cookie cannot create sessions. The
+        response sets the session token as an HttpOnly, SameSite=Strict cookie, Secure unless the
+        request is plain HTTP to a loopback address. Only the token's SHA-256 is stored. Sessions
+        expire after ui.session_ttl_seconds and stop working when the key is revoked. Each key keeps at
+        most 20 sessions.
+      responses:
+        "201":
+          description: Session created
+          headers:
+            Set-Cookie:
+              description: arcana_session=<token>
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/sessions/current:
+    delete:
+      operationId: deleteCurrentSession
+      summary: Log out of the dashboard
+      description: Ends the session identified by the cookie and clears it. Idempotent.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "204":
+          description: Logged out
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/events:
+    get:
+      operationId: streamEvents
+      summary: Server-Sent Events stream of lifecycle, exec and pool events
+      description: >-
+        Events carry increasing IDs; reconnect with Last-Event-ID to resume from the last
+        ui.event_buffer events. A client that cannot be resumed, or falls too far behind, receives a
+        `reset` event and is disconnected and must refetch state. A comment line is sent every 15 seconds.
+        Events are filtered to what the caller may see; pool events are admin-only. Types:
+        sandbox.created, sandbox.state, sandbox.destroyed, exec.started, exec.ended, pool.changed.
+        Metadata only; exec output is never included. See docs/events.md.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: header
+          name: Last-Event-ID
+          required: false
+          schema:
+            type: string
+            maxLength: 20
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/overview:
+    get:
+      operationId: getOverview
+      summary: Dashboard overview
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Overview'
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/execs:
+    get:
+      operationId: listExecs
+      summary: Exec history of a sandbox, newest first
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            default: 100
+            format: int64
+            maximum: 1000
+            minimum: 1
+            type: integer
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecList'
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/execs/{exec_id}/output:
+    get:
+      operationId: streamExecOutput
+      summary: Server-Sent Events tail of an exec's buffered and live output
+      description: >-
+        Replays the in-memory ring (limits.exec.tail_buffer_bytes), then streams live output until the
+        exec ends. `output` events carry {seq, stream, data} with base64 data; `gap` means older output
+        was discarded; `end` carries the exit result, with expired=true when the output is no longer
+        retained (tail_retention_seconds after the exec ended). Output is never persisted. At most
+        limits.exec.max_tail_subscribers readers per exec.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: exec_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Output stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
         "500":
           $ref: '#/components/responses/Error'
         "501":

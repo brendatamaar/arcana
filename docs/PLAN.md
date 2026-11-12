@@ -356,7 +356,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `internal/bench` (cold-create, pool-acquire, exec-overhead, density, snapshot/restore/fork; nearest-rank percentiles; PRD §8.2 verdicts; guaranteed cleanup) and `arcana bench` writing results.json and results.md, `scripts/bench_charts.py` (stdlib SVG), and `docs/benchmarks.md` with a real run against a live Arcana on runsc. Unit tests use a fake clock and API. Results on this 2 vCPU/1.9 GB shared VM (not the reference host): cold create p50 206 ms, pool acquire p50 5.6 ms, exec p50 94 ms (narrowly met), all within target. **Density was not measured to its target:** capped at 12 sandboxes to protect the VM, so the 20-sandbox target is neither confirmed nor refuted; the harness reports capped runs as "not measured" rather than a miss. Single run, small samples; a rerun on the reference host is still needed for published claims. A first run's `results.json` was hand-patched and discarded; the recorded one is a clean rerun.
 
-### [ ] T3.6 Dashboard backend support
+### [x] T3.6 Dashboard backend support
 - **Deps:** T3.1 · **PRD:** FR-WD-4…8, FR-AU-1, §11 (`sessions`), ESC-22, ESC-23
 - **Do:**
   - Migration for `sessions`. In `internal/auth`: create, verify and revoke sessions (token hashed, TTL, invalid once the key is revoked, debounced `last_seen_at`); `POST /v1/sessions` sets the cookie per FR-WD-4; `DELETE /v1/sessions/current` clears it.
@@ -367,6 +367,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - OpenAPI spec, generated code, `pkg/client` methods (events and output tail) and metrics (`ui_sessions_active`, `event_subscribers`).
 - **Acceptance:** unit tests for session lifecycle, cookie method restriction, origin checks, bus fan-out, backpressure and resume, ring buffer wrap and retention; ESC-22 and ESC-23 implemented and passing; sandbox output is still never written to disk.
 - **Verify:** `make generate verify-generated && go test -race ./internal/auth/... ./internal/events/... ./internal/api/... && make test-escape`
+
+> Done: Added the `sessions` migration and queries, cookie sessions in `internal/auth` (hashed tokens, TTL, revoked-key invalidation, 20 per key; pure `decideCookie` policy: GET/HEAD and logout only, same-origin proof via Origin/Sec-Fetch-Site, bearer wins over cookie), `POST /v1/sessions` and `DELETE /v1/sessions/current`, `internal/events` (bus with resume, reset and slow-subscriber drop; bounded in-memory output rings with retention and reader caps), orchestrator publishing of lifecycle, exec and pool events plus ring feeding, SSE `/v1/events` and exec output tail, `/v1/overview` and exec history, OpenAPI/generated code, Go client (`Events`, `ExecOutput`, `ListExecs`, `GetOverview`), live `ui_sessions_active`/`event_subscribers` gauges, `ui.*` and `limits.exec.tail_*` config with docs, and docs/events.md. ESC-22 and ESC-23 pass on runsc through the public API; a mutation that let cookies authorize any method failed both them and the unit tests. Sandbox output is never written to disk. The work also found and fixed a latent bug: `exec.started` audit events for shell execs were silently dropped (the raw shell string was embedded as invalid JSON); regression test added. Verified: make check, and the full serial `make test-integration` and `make test-escape` suites passed. Not done: session create/logout methods in the Go client (browser-only).
 
 ### [ ] T3.7 Dashboard frontend (React)
 - **Deps:** T3.6 · **PRD:** FR-WD-1…3, FR-WD-9…11, ESC-24, §8.2
@@ -521,6 +523,8 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
 
 - 2026-11-09 — Resolved: approved cgroup-based ESC-03 checks passed in isolation and the full escape suite; T2.5 verification is complete.
+
+- 2026-11-12 — Dashboard backend: cookie sessions authorize only GET/HEAD and logout and require same-origin proof (Origin match or Sec-Fetch-Site same-origin); Authorization always wins over the cookie; events are metadata-only and owner-filtered with pool events admin-only; output tails are in-memory rings with retention and caps; an unknown exec returns sandbox_not_found rather than adding an error code — keeps FR-WD-5 and FR-EX-8 intact without extending the PRD §10.3 code list — T3.6, docs/events.md.
 
 - 2026-11-12 — OPEN (T3.4): run `make eval-agent` with a real local model (FIXAGENT_BASE_URL/FIXAGENT_MODEL, e.g. Ollama) and record the table and failures in docs/agent-results.md, for single-attempt and `--parallel 4`. The build environment had no model endpoint and ~1 GB RAM, so the acceptance item "runs end-to-end on at least one fixture with a local model; results recorded including failures" is unmet; no results were invented. Owner chose to leave this pending. Does not block T3.5–T3.7; T3.8 needs the real results for its demo recording.
 

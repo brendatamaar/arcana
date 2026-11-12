@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,6 +28,54 @@ type Metrics struct {
 	creates                                    *prometheus.HistogramVec
 	destroys, execs, egress, requests, orphans *prometheus.CounterVec
 	durations, latencies                       *prometheus.HistogramVec
+	live                                       atomic.Pointer[LiveSources]
+}
+
+// LiveSources supplies dashboard gauges that live outside the metrics package. Any field may be nil.
+type LiveSources struct {
+	// Sessions counts unexpired sessions of unrevoked keys.
+	Sessions func(context.Context) (int64, error)
+	// EventSubscribers and ExecOutputSubscribers count open /v1/events and exec output streams.
+	EventSubscribers, ExecOutputSubscribers func() int
+}
+
+// SetLiveSources connects the dashboard gauges. Until it is called they report zero.
+func (m *Metrics) SetLiveSources(sources LiveSources) { m.live.Store(&sources) }
+
+type liveCollector struct {
+	m           *Metrics
+	sessions    *prometheus.Desc
+	subscribers *prometheus.Desc
+}
+
+func (c *liveCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.sessions
+	ch <- c.subscribers
+}
+
+func (c *liveCollector) Collect(ch chan<- prometheus.Metric) {
+	var sources LiveSources
+	if live := c.m.live.Load(); live != nil {
+		sources = *live
+	}
+	sessions := 0.0
+	if sources.Sessions != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		n, err := sources.Sessions(ctx)
+		if err != nil {
+			ch <- prometheus.NewInvalidMetric(c.sessions, err)
+		}
+		sessions = float64(n)
+	}
+	ch <- prometheus.MustNewConstMetric(c.sessions, prometheus.GaugeValue, sessions)
+	for stream, read := range map[string]func() int{"events": sources.EventSubscribers, "exec_output": sources.ExecOutputSubscribers} {
+		count := 0.0
+		if read != nil {
+			count = float64(read())
+		}
+		ch <- prometheus.MustNewConstMetric(c.subscribers, prometheus.GaugeValue, count, stream)
+	}
 }
 
 // New registers the PRD collectors and lazy snapshots from explicit sources.
@@ -86,11 +135,11 @@ func New(database *store.Store, cfg config.Config, pool func() map[string]int, s
 			return read(stats())
 		}))
 	}
-	m.registry.MustRegister(prometheus.NewGauge(prometheus.GaugeOpts{Name: "arcana_ui_sessions_active", Help: "Dashboard sessions; enabled in v0.3."}))
-	subscribers := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "arcana_event_subscribers", Help: "Live subscriptions; enabled in v0.3."}, []string{"stream"})
-	subscribers.WithLabelValues("events")
-	subscribers.WithLabelValues("exec_output")
-	m.registry.MustRegister(subscribers)
+	m.registry.MustRegister(&liveCollector{
+		m:           m,
+		sessions:    prometheus.NewDesc("arcana_ui_sessions_active", "Unexpired dashboard sessions of unrevoked keys.", nil, nil),
+		subscribers: prometheus.NewDesc("arcana_event_subscribers", "Live event and exec output subscriptions.", []string{"stream"}, nil),
+	})
 	return m
 }
 

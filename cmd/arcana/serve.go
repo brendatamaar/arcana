@@ -17,6 +17,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/helper"
 	"github.com/brendatamaar/arcana/internal/logging"
 	"github.com/brendatamaar/arcana/internal/metrics"
@@ -26,6 +27,9 @@ import (
 	"github.com/brendatamaar/arcana/internal/store"
 	"golang.org/x/sync/errgroup"
 )
+
+// maxEventSubscribers caps concurrent /v1/events streams across all keys.
+const maxEventSubscribers = 256
 
 func newServeCommand() *cobra.Command {
 	return &cobra.Command{Use: "serve", Short: "Serve the Arcana API", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
@@ -83,6 +87,11 @@ func newServeCommand() *cobra.Command {
 			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
 		}
 		lifecycle = orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
+		var bus *events.Bus
+		if cfg.UI.Enabled {
+			bus = events.NewBus(orchestrator.SystemClock{}, cfg.UI.EventBuffer, maxEventSubscribers)
+			lifecycle.WithEvents(bus)
+		}
 		if err = lifecycle.Reconcile(ctx); err != nil {
 			return fmt.Errorf("startup reconciliation: %w", err)
 		}
@@ -103,6 +112,10 @@ func newServeCommand() *cobra.Command {
 		go func() { defer close(maintenanceDone); lifecycle.Maintain(maintenanceCtx, logger) }()
 		defer func() { cancelMaintenance(); <-maintenanceDone }()
 		keys := auth.New(database, auth.SystemClock{}, recorder)
+		if cfg.UI.Enabled {
+			keys.WithSessions(auth.SessionPolicy{TTL: time.Duration(cfg.UI.SessionTTLSeconds) * time.Second, AllowedOrigins: cfg.UI.AllowedOrigins})
+		}
+		telemetry.SetLiveSources(metrics.LiveSources{Sessions: keys.ActiveSessions, EventSubscribers: bus.Subscribers, ExecOutputSubscribers: lifecycle.TailSubscribers})
 		if err = keys.Bootstrap(ctx, cfg.DataDir, cmd.OutOrStdout()); err != nil {
 			return err
 		}
@@ -128,7 +141,7 @@ func newServeCommand() *cobra.Command {
 		group, serveCtx := errgroup.WithContext(ctx)
 		timeout := time.Duration(cfg.Server.ShutdownTimeoutSeconds) * time.Second
 		group.Go(func() error {
-			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey, MaxFork: cfg.Snapshots.MaxFork}), timeout, logger)
+			return api.Serve(serveCtx, listener, api.New(keys, logger, cfg.Limits.Files, lifecycle, api.Options{Audit: recorder, Middleware: telemetry.HTTP, CreatePerMinute: cfg.Limits.CreatePerMinutePerKey, MaxFork: cfg.Snapshots.MaxFork, Version: version}), timeout, logger)
 		})
 		group.Go(func() error {
 			return api.Serve(serveCtx, netpolicy.BoundListener(metricsListener, 32), telemetry.Handler(), timeout, logger)

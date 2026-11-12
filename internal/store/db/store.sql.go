@@ -11,6 +11,39 @@ import (
 	"time"
 )
 
+const countActiveByTemplate = `-- name: CountActiveByTemplate :many
+SELECT template, count(*) AS active FROM sandboxes WHERE state IN ('creating','running','destroying') AND (?1 = '' OR owner_key_id = ?1)
+GROUP BY template ORDER BY template
+`
+
+type CountActiveByTemplateRow struct {
+	Template string
+	Active   int64
+}
+
+func (q *Queries) CountActiveByTemplate(ctx context.Context, owner interface{}) ([]CountActiveByTemplateRow, error) {
+	rows, err := q.db.QueryContext(ctx, countActiveByTemplate, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountActiveByTemplateRow{}
+	for rows.Next() {
+		var i CountActiveByTemplateRow
+		if err := rows.Scan(&i.Template, &i.Active); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countActiveSandboxes = `-- name: CountActiveSandboxes :one
 SELECT count(*) FROM sandboxes WHERE state IN ('creating','running','destroying') AND (?1 = '' OR owner_key_id = ?1)
 `
@@ -22,12 +55,34 @@ func (q *Queries) CountActiveSandboxes(ctx context.Context, owner interface{}) (
 	return count, err
 }
 
+const countActiveSessions = `-- name: CountActiveSessions :one
+SELECT count(*) FROM sessions s JOIN api_keys k ON k.id = s.key_id WHERE s.expires_at > ? AND k.revoked_at IS NULL
+`
+
+func (q *Queries) CountActiveSessions(ctx context.Context, expiresAt time.Time) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveSessions, expiresAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countKeys = `-- name: CountKeys :one
 SELECT count(*) FROM api_keys
 `
 
 func (q *Queries) CountKeys(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countKeys)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSessionsForKey = `-- name: CountSessionsForKey :one
+SELECT count(*) FROM sessions WHERE key_id = ?
+`
+
+func (q *Queries) CountSessionsForKey(ctx context.Context, keyID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionsForKey, keyID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -203,6 +258,40 @@ func (q *Queries) CreateSandbox(ctx context.Context, arg CreateSandboxParams) (S
 	return i, err
 }
 
+const createSession = `-- name: CreateSession :one
+INSERT INTO sessions (id,key_id,token_hash,created_at,expires_at,last_seen_at) VALUES (?,?,?,?,?,?) RETURNING id, key_id, token_hash, created_at, expires_at, last_seen_at
+`
+
+type CreateSessionParams struct {
+	ID         string
+	KeyID      string
+	TokenHash  []byte
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastSeenAt sql.NullTime
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRowContext(ctx, createSession,
+		arg.ID,
+		arg.KeyID,
+		arg.TokenHash,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.LastSeenAt,
+	)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.KeyID,
+		&i.TokenHash,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
 const createSnapshot = `-- name: CreateSnapshot :one
 INSERT INTO snapshots (id,owner_key_id,source_sandbox_id,template,spec,path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id, owner_key_id, source_sandbox_id, template, spec, path, size_bytes, sha256, created_at
 `
@@ -244,6 +333,47 @@ func (q *Queries) CreateSnapshot(ctx context.Context, arg CreateSnapshotParams) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions WHERE expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredSessions, expiresAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteOldestSessionsForKey = `-- name: DeleteOldestSessionsForKey :execrows
+DELETE FROM sessions WHERE id IN (SELECT o.id FROM sessions o WHERE o.key_id = ? ORDER BY o.created_at, o.id LIMIT ?)
+`
+
+type DeleteOldestSessionsForKeyParams struct {
+	KeyID string
+	Limit int64
+}
+
+func (q *Queries) DeleteOldestSessionsForKey(ctx context.Context, arg DeleteOldestSessionsForKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOldestSessionsForKey, arg.KeyID, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSession = `-- name: DeleteSession :execrows
+DELETE FROM sessions WHERE id = ?
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteSnapshot = `-- name: DeleteSnapshot :execrows
@@ -415,6 +545,34 @@ func (q *Queries) GetSandbox(ctx context.Context, id string) (Sandbox, error) {
 	return i, err
 }
 
+const getSessionByHash = `-- name: GetSessionByHash :one
+SELECT s.id, s.key_id, s.expires_at, s.last_seen_at, k.is_admin, k.revoked_at AS key_revoked_at
+FROM sessions s JOIN api_keys k ON k.id = s.key_id WHERE s.token_hash = ?
+`
+
+type GetSessionByHashRow struct {
+	ID           string
+	KeyID        string
+	ExpiresAt    time.Time
+	LastSeenAt   sql.NullTime
+	IsAdmin      int64
+	KeyRevokedAt sql.NullTime
+}
+
+func (q *Queries) GetSessionByHash(ctx context.Context, tokenHash []byte) (GetSessionByHashRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByHash, tokenHash)
+	var i GetSessionByHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.KeyID,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.IsAdmin,
+		&i.KeyRevokedAt,
+	)
+	return i, err
+}
+
 const getSnapshot = `-- name: GetSnapshot :one
 SELECT id, owner_key_id, source_sandbox_id, template, spec, path, size_bytes, sha256, created_at FROM snapshots WHERE id = ?
 `
@@ -509,6 +667,56 @@ type ListExecsParams struct {
 
 func (q *Queries) ListExecs(ctx context.Context, arg ListExecsParams) ([]Exec, error) {
 	rows, err := q.db.QueryContext(ctx, listExecs, arg.SandboxID, arg.ID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Exec{}
+	for rows.Next() {
+		var i Exec
+		if err := rows.Scan(
+			&i.ID,
+			&i.SandboxID,
+			&i.Command,
+			&i.IsShell,
+			&i.Cwd,
+			&i.Tty,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.ExitCode,
+			&i.TimedOut,
+			&i.Cancelled,
+			&i.Truncated,
+			&i.StdoutBytes,
+			&i.StderrBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExecsNewestFirst = `-- name: ListExecsNewestFirst :many
+SELECT x.id, x.sandbox_id, x.command, x.is_shell, x.cwd, x.tty, x.started_at, x.ended_at, x.exit_code, x.timed_out, x.cancelled, x.truncated, x.stdout_bytes, x.stderr_bytes FROM execs x WHERE x.sandbox_id = ?1
+AND (?2 = '' OR (x.started_at, x.id) < (SELECT e.started_at, e.id FROM execs e WHERE e.id = ?2))
+ORDER BY x.started_at DESC, x.id DESC LIMIT MIN(MAX(CAST(?3 AS INTEGER), 1), 1000)
+`
+
+type ListExecsNewestFirstParams struct {
+	SandboxID string
+	Cursor    interface{}
+	PageLimit int64
+}
+
+func (q *Queries) ListExecsNewestFirst(ctx context.Context, arg ListExecsNewestFirstParams) ([]Exec, error) {
+	rows, err := q.db.QueryContext(ctx, listExecsNewestFirst, arg.SandboxID, arg.Cursor, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -698,6 +906,62 @@ func (q *Queries) ListSnapshots(ctx context.Context, arg ListSnapshotsParams) ([
 	return items, nil
 }
 
+const recentEndedSandboxes = `-- name: RecentEndedSandboxes :many
+SELECT id, owner_key_id, template, runtime, state, container_id, source, cpus, memory_mb, disk_mb, pids, network_mode, network_allow, env_keys, labels, from_snapshot_id, created_at, expires_at, idle_timeout_seconds, last_activity_at, ended_at, end_reason FROM sandboxes WHERE ended_at IS NOT NULL AND (?1 = '' OR owner_key_id = ?1)
+ORDER BY ended_at DESC, id DESC LIMIT MIN(MAX(CAST(?2 AS INTEGER), 1), 100)
+`
+
+type RecentEndedSandboxesParams struct {
+	Owner     interface{}
+	PageLimit int64
+}
+
+func (q *Queries) RecentEndedSandboxes(ctx context.Context, arg RecentEndedSandboxesParams) ([]Sandbox, error) {
+	rows, err := q.db.QueryContext(ctx, recentEndedSandboxes, arg.Owner, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sandbox{}
+	for rows.Next() {
+		var i Sandbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKeyID,
+			&i.Template,
+			&i.Runtime,
+			&i.State,
+			&i.ContainerID,
+			&i.Source,
+			&i.Cpus,
+			&i.MemoryMb,
+			&i.DiskMb,
+			&i.Pids,
+			&i.NetworkMode,
+			&i.NetworkAllow,
+			&i.EnvKeys,
+			&i.Labels,
+			&i.FromSnapshotID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.IdleTimeoutSeconds,
+			&i.LastActivityAt,
+			&i.EndedAt,
+			&i.EndReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordSandboxTransition = `-- name: RecordSandboxTransition :exec
 INSERT INTO sandbox_transitions(sandbox_id,state,at,reason) VALUES (?,?,?,?)
 `
@@ -790,6 +1054,20 @@ func (q *Queries) TouchSandbox(ctx context.Context, arg TouchSandboxParams) (int
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions SET last_seen_at = ? WHERE id = ?
+`
+
+type TouchSessionParams struct {
+	LastSeenAt sql.NullTime
+	ID         string
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.ExecContext(ctx, touchSession, arg.LastSeenAt, arg.ID)
+	return err
 }
 
 const updateSandboxState = `-- name: UpdateSandboxState :execrows

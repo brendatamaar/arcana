@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/brendatamaar/arcana/internal/api/gen"
 	"github.com/brendatamaar/arcana/internal/apierr"
@@ -26,6 +27,10 @@ type Options struct {
 	RateClock  RateClock
 	Audit      *audit.Writer
 	Middleware func(http.Handler) http.Handler
+	// Version is reported by /v1/overview.
+	Version string
+	// HeartbeatInterval overrides the 15 second SSE keep-alive, for tests.
+	HeartbeatInterval time.Duration
 }
 
 // Server implements the generated API contract.
@@ -36,6 +41,8 @@ type Server struct {
 	logger    *slog.Logger
 	lifecycle *orchestrator.Service
 	maxFork   int
+	version   string
+	heartbeat time.Duration
 	streams   chan struct{}
 	streamMu  sync.Mutex
 	streamWG  sync.WaitGroup
@@ -60,7 +67,12 @@ func New(keys *auth.Service, logger *slog.Logger, files config.Files, lifecycle 
 	if len(options) > 0 && options[0].MaxFork > 0 {
 		maxFork = options[0].MaxFork
 	}
-	server := &Server{limiter: newCreationLimiter(rate, clock), maxFork: maxFork, audit: recorder, keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
+	var version string
+	var heartbeat time.Duration
+	if len(options) > 0 {
+		version, heartbeat = options[0].Version, options[0].HeartbeatInterval
+	}
+	server := &Server{limiter: newCreationLimiter(rate, clock), maxFork: maxFork, version: version, heartbeat: heartbeat, audit: recorder, keys: keys, logger: logger, lifecycle: lifecycle, streams: make(chan struct{}, 1000)}
 	handler := gen.HandlerWithOptions(server, gen.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		server.failure(w, r, apierr.NewInvalidRequest("invalid request parameters"))
 	}})

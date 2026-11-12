@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/brendatamaar/arcana/internal/events"
 )
 
 type capture struct {
@@ -19,6 +21,8 @@ type capture struct {
 	observer           StreamObserver
 	sink               io.Writer
 	sinkErr            error
+	// tail mirrors the kept output into the dashboard's in-memory ring (never to disk).
+	tail *events.Tail
 }
 type captureWriter struct {
 	target *capture
@@ -45,6 +49,7 @@ func (w captureWriter) Write(p []byte) (int, error) {
 	if kept < int64(len(p)) {
 		c.truncated = true
 	}
+	c.tail.Write(w.stderr, p[:kept])
 	// Always report the full write so producers continue draining after the cap.
 	if c.sink != nil {
 		if c.sinkErr == nil {

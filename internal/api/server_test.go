@@ -65,7 +65,7 @@ func TestContract_Validates(t *testing.T) {
 	if err = document.Validate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if document.Paths.Len() != 17 {
+	if document.Paths.Len() != 23 {
 		t.Fatalf("unexpected endpoint path count: %d", document.Paths.Len())
 	}
 }
@@ -75,7 +75,7 @@ func TestServer_PublicHealthAndProtectedStubs(t *testing.T) {
 	if got := request(handler, "GET", "/v1/health", "", ""); got.Code != 200 {
 		t.Fatal(got.Body.String())
 	}
-	routes := [][2]string{{"POST", "/v1/sandboxes"}, {"GET", "/v1/sandboxes"}, {"GET", "/v1/sandboxes/sbx_test"}, {"DELETE", "/v1/sandboxes/sbx_test"}, {"POST", "/v1/sandboxes/sbx_test/keepalive"}, {"POST", "/v1/sandboxes/sbx_test/exec"}, {"GET", "/v1/sandboxes/sbx_test/exec/stream"}, {"GET", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"PUT", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"DELETE", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"GET", "/v1/sandboxes/sbx_test/files/list?path=/workspace"}, {"GET", "/v1/sandboxes/sbx_test/files/archive?path=/workspace"}, {"PUT", "/v1/sandboxes/sbx_test/files/archive?path=/workspace"}, {"POST", "/v1/sandboxes/sbx_test/snapshots"}, {"GET", "/v1/snapshots"}, {"GET", "/v1/snapshots/snp_test"}, {"DELETE", "/v1/snapshots/snp_test"}, {"POST", "/v1/snapshots/snp_test/fork"}}
+	routes := [][2]string{{"POST", "/v1/sandboxes"}, {"GET", "/v1/sandboxes"}, {"GET", "/v1/sandboxes/sbx_test"}, {"DELETE", "/v1/sandboxes/sbx_test"}, {"POST", "/v1/sandboxes/sbx_test/keepalive"}, {"POST", "/v1/sandboxes/sbx_test/exec"}, {"GET", "/v1/sandboxes/sbx_test/exec/stream"}, {"GET", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"PUT", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"DELETE", "/v1/sandboxes/sbx_test/files?path=/workspace/a"}, {"GET", "/v1/sandboxes/sbx_test/files/list?path=/workspace"}, {"GET", "/v1/sandboxes/sbx_test/files/archive?path=/workspace"}, {"PUT", "/v1/sandboxes/sbx_test/files/archive?path=/workspace"}, {"POST", "/v1/sandboxes/sbx_test/snapshots"}, {"GET", "/v1/snapshots"}, {"GET", "/v1/snapshots/snp_test"}, {"DELETE", "/v1/snapshots/snp_test"}, {"POST", "/v1/snapshots/snp_test/fork"}, {"GET", "/v1/events"}, {"GET", "/v1/overview"}, {"GET", "/v1/sandboxes/sbx_test/execs"}, {"GET", "/v1/sandboxes/sbx_test/execs/exe_test/output"}}
 	for _, route := range routes {
 		t.Run(route[0]+route[1], func(t *testing.T) {
 			if got := request(handler, route[0], route[1], "", ""); got.Code != 401 {

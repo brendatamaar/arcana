@@ -88,3 +88,41 @@ SELECT count(*) FROM snapshots WHERE sqlc.arg(owner) = '' OR owner_key_id = sqlc
 
 -- name: SumSnapshotBytes :one
 SELECT CAST(COALESCE(SUM(size_bytes),0) AS INTEGER) FROM snapshots;
+
+-- name: CreateSession :one
+INSERT INTO sessions (id,key_id,token_hash,created_at,expires_at,last_seen_at) VALUES (?,?,?,?,?,?) RETURNING *;
+
+-- name: GetSessionByHash :one
+SELECT s.id, s.key_id, s.expires_at, s.last_seen_at, k.is_admin, k.revoked_at AS key_revoked_at
+FROM sessions s JOIN api_keys k ON k.id = s.key_id WHERE s.token_hash = ?;
+
+-- name: TouchSession :exec
+UPDATE sessions SET last_seen_at = ? WHERE id = ?;
+
+-- name: DeleteSession :execrows
+DELETE FROM sessions WHERE id = ?;
+
+-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions WHERE expires_at <= ?;
+
+-- name: CountSessionsForKey :one
+SELECT count(*) FROM sessions WHERE key_id = ?;
+
+-- name: DeleteOldestSessionsForKey :execrows
+DELETE FROM sessions WHERE id IN (SELECT o.id FROM sessions o WHERE o.key_id = ? ORDER BY o.created_at, o.id LIMIT ?);
+
+-- name: CountActiveSessions :one
+SELECT count(*) FROM sessions s JOIN api_keys k ON k.id = s.key_id WHERE s.expires_at > ? AND k.revoked_at IS NULL;
+
+-- name: ListExecsNewestFirst :many
+SELECT x.* FROM execs x WHERE x.sandbox_id = sqlc.arg(sandbox_id)
+AND (sqlc.arg(cursor) = '' OR (x.started_at, x.id) < (SELECT e.started_at, e.id FROM execs e WHERE e.id = sqlc.arg(cursor)))
+ORDER BY x.started_at DESC, x.id DESC LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
+
+-- name: CountActiveByTemplate :many
+SELECT template, count(*) AS active FROM sandboxes WHERE state IN ('creating','running','destroying') AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner))
+GROUP BY template ORDER BY template;
+
+-- name: RecentEndedSandboxes :many
+SELECT * FROM sandboxes WHERE ended_at IS NOT NULL AND (sqlc.arg(owner) = '' OR owner_key_id = sqlc.arg(owner))
+ORDER BY ended_at DESC, id DESC LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 100);

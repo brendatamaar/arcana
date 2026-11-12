@@ -240,6 +240,36 @@ type Error struct {
 // ErrorErrorCode defines model for Error.Error.Code.
 type ErrorErrorCode string
 
+// ExecList defines model for ExecList.
+type ExecList struct {
+	Items      []ExecRecord `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
+// ExecRecord Metadata of one exec. Output is never stored; see the exec output stream.
+type ExecRecord struct {
+	Cancelled bool `json:"cancelled"`
+
+	// Cmd argv when the exec was given as an array.
+	Cmd     *[]string  `json:"cmd,omitempty"`
+	Cwd     string     `json:"cwd"`
+	EndedAt *time.Time `json:"ended_at,omitempty"`
+
+	// ExitCode The command's real exit status; null while running or when it could not be confirmed.
+	ExitCode  *int   `json:"exit_code,omitempty"`
+	Id        string `json:"id"`
+	SandboxId string `json:"sandbox_id"`
+
+	// Shell The shell string when the exec used the shell field.
+	Shell       *string   `json:"shell,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	StderrBytes *int64    `json:"stderr_bytes,omitempty"`
+	StdoutBytes *int64    `json:"stdout_bytes,omitempty"`
+	TimedOut    *bool     `json:"timed_out,omitempty"`
+	Truncated   *bool     `json:"truncated,omitempty"`
+	Tty         bool      `json:"tty"`
+}
+
 // ExecRequest defines model for ExecRequest.
 type ExecRequest struct {
 	Cmd            *[]string          `json:"cmd,omitempty"`
@@ -346,6 +376,22 @@ type Network struct {
 // NetworkMode defines model for Network.Mode.
 type NetworkMode string
 
+// Overview Admin keys see installation-wide numbers; other keys see their own, and no pool fill.
+type Overview struct {
+	Pool                []PoolFill      `json:"pool"`
+	RecentTerminations  []Termination   `json:"recent_terminations"`
+	Runtime             string          `json:"runtime"`
+	SandboxesByTemplate []TemplateCount `json:"sandboxes_by_template"`
+	Version             string          `json:"version"`
+}
+
+// PoolFill defines model for PoolFill.
+type PoolFill struct {
+	Available int64  `json:"available"`
+	Target    int64  `json:"target"`
+	Template  string `json:"template"`
+}
+
 // Resources defines model for Resources.
 type Resources struct {
 	Cpus     *float32 `json:"cpus,omitempty"`
@@ -384,6 +430,12 @@ type SandboxList struct {
 // SandboxState defines model for SandboxState.
 type SandboxState string
 
+// Session A dashboard browser session. Its token is delivered only as an HttpOnly cookie.
+type Session struct {
+	ExpiresAt time.Time `json:"expires_at"`
+	Id        string    `json:"id"`
+}
+
 // Snapshot Compressed copy of a sandbox's /workspace plus its creation spec. Environment values are never stored.
 type Snapshot struct {
 	CreatedAt       time.Time `json:"created_at"`
@@ -417,9 +469,24 @@ type Template struct {
 	Workdir            string    `json:"workdir"`
 }
 
+// TemplateCount defines model for TemplateCount.
+type TemplateCount struct {
+	Count    int64  `json:"count"`
+	Template string `json:"template"`
+}
+
 // TemplateList defines model for TemplateList.
 type TemplateList struct {
 	Items []Template `json:"items"`
+}
+
+// Termination defines model for Termination.
+type Termination struct {
+	EndedAt  time.Time    `json:"ended_at"`
+	Id       string       `json:"id"`
+	Reason   *string      `json:"reason,omitempty"`
+	State    SandboxState `json:"state"`
+	Template string       `json:"template"`
 }
 
 // ListAuditParams defines parameters for ListAudit.
@@ -431,6 +498,11 @@ type ListAuditParams struct {
 	Until     *time.Time `form:"until,omitempty" json:"until,omitempty"`
 	Cursor    *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit     *int64     `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// StreamEventsParams defines parameters for StreamEvents.
+type StreamEventsParams struct {
+	LastEventID *string `json:"Last-Event-ID,omitempty"`
 }
 
 // ListKeysParams defines parameters for ListKeys.
@@ -445,6 +517,12 @@ type ListSandboxesParams struct {
 	Cursor *string       `form:"cursor,omitempty" json:"cursor,omitempty"`
 	State  *SandboxState `form:"state,omitempty" json:"state,omitempty"`
 	Label  *string       `form:"label,omitempty" json:"label,omitempty"`
+}
+
+// ListExecsParams defines parameters for ListExecs.
+type ListExecsParams struct {
+	Limit  *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // DeleteFileParams defines parameters for DeleteFile.
@@ -668,6 +746,9 @@ type ServerInterface interface {
 	// ListAudit Query audit events (admin only)
 	// (GET /v1/audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
+	// StreamEvents Server-Sent Events stream of lifecycle, exec and pool events
+	// (GET /v1/events)
+	StreamEvents(w http.ResponseWriter, r *http.Request, params StreamEventsParams)
 
 	// (GET /v1/health)
 	Health(w http.ResponseWriter, r *http.Request)
@@ -680,6 +761,9 @@ type ServerInterface interface {
 
 	// (DELETE /v1/keys/{id})
 	RevokeKey(w http.ResponseWriter, r *http.Request, id string)
+	// GetOverview Dashboard overview
+	// (GET /v1/overview)
+	GetOverview(w http.ResponseWriter, r *http.Request)
 
 	// (GET /v1/sandboxes)
 	ListSandboxes(w http.ResponseWriter, r *http.Request, params ListSandboxesParams)
@@ -698,6 +782,12 @@ type ServerInterface interface {
 
 	// (GET /v1/sandboxes/{id}/exec/stream)
 	ExecStream(w http.ResponseWriter, r *http.Request, id string)
+	// ListExecs Exec history of a sandbox, newest first
+	// (GET /v1/sandboxes/{id}/execs)
+	ListExecs(w http.ResponseWriter, r *http.Request, id string, params ListExecsParams)
+	// StreamExecOutput Server-Sent Events tail of an exec's buffered and live output
+	// (GET /v1/sandboxes/{id}/execs/{exec_id}/output)
+	StreamExecOutput(w http.ResponseWriter, r *http.Request, id string, execId string)
 
 	// (DELETE /v1/sandboxes/{id}/files)
 	DeleteFile(w http.ResponseWriter, r *http.Request, id string, params DeleteFileParams)
@@ -722,6 +812,12 @@ type ServerInterface interface {
 	// CreateSnapshot Snapshot a running sandbox's /workspace
 	// (POST /v1/sandboxes/{id}/snapshots)
 	CreateSnapshot(w http.ResponseWriter, r *http.Request, id string)
+	// CreateSession Exchange the API key for a dashboard session cookie
+	// (POST /v1/sessions)
+	CreateSession(w http.ResponseWriter, r *http.Request)
+	// DeleteCurrentSession Log out of the dashboard
+	// (DELETE /v1/sessions/current)
+	DeleteCurrentSession(w http.ResponseWriter, r *http.Request)
 	// ListSnapshots List snapshots visible to the key
 	// (GET /v1/snapshots)
 	ListSnapshots(w http.ResponseWriter, r *http.Request, params ListSnapshotsParams)
@@ -859,6 +955,47 @@ func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// StreamEvents operation middleware
+func (siw *ServerInterfaceWrapper) StreamEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StreamEventsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Last-Event-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Last-Event-ID")]; found {
+		var LastEventID string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Last-Event-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Last-Event-ID", valueList[0], &LastEventID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Last-Event-ID", Err: err})
+			return
+		}
+
+		params.LastEventID = &LastEventID
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Health operation middleware
 func (siw *ServerInterfaceWrapper) Health(w http.ResponseWriter, r *http.Request) {
 
@@ -950,6 +1087,20 @@ func (siw *ServerInterfaceWrapper) RevokeKey(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeKey(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetOverview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOverview(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1140,6 +1291,96 @@ func (siw *ServerInterfaceWrapper) ExecStream(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ExecStream(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListExecs operation middleware
+func (siw *ServerInterfaceWrapper) ListExecs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListExecsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExecs(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamExecOutput operation middleware
+func (siw *ServerInterfaceWrapper) StreamExecOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "exec_id" -------------
+	var execId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "exec_id", r.PathValue("exec_id"), &execId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "exec_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamExecOutput(w, r, id, execId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1479,6 +1720,34 @@ func (siw *ServerInterfaceWrapper) CreateSnapshot(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// CreateSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCurrentSession operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCurrentSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSnapshots operation middleware
 func (siw *ServerInterfaceWrapper) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 
@@ -1743,6 +2012,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/snapshots/{id}", wrapper.DeleteSnapshot)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/snapshots/{id}", wrapper.GetSnapshot)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/snapshots/{id}/fork", wrapper.ForkSnapshot)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/events", wrapper.StreamEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/overview", wrapper.GetOverview)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/execs", wrapper.ListExecs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/execs/{exec_id}/output", wrapper.StreamExecOutput)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/templates", wrapper.ListTemplates)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/health", wrapper.Health)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/keys", wrapper.ListKeys)

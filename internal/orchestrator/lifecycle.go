@@ -16,6 +16,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/audit"
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/config"
+	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/store"
@@ -73,6 +74,8 @@ type Service struct {
 	execMu      sync.Mutex
 	activeExecs map[string]int
 	snaps       snapshotState
+	events      *events.Bus
+	tails       *events.Tails
 }
 
 // New constructs an orchestrator with independent operator configuration.
@@ -266,6 +269,10 @@ func (s *Service) transition(ctx context.Context, row db.Sandbox, event Event, r
 	if err = tx.Commit(); err != nil {
 		return db.Sandbox{}, err
 	}
+	s.events.Publish(events.SandboxState, row.OwnerKeyID, row.ID, map[string]any{"state": row.State, "reason": row.EndReason.String, "template": row.Template})
+	if terminal(next) {
+		s.events.Publish(events.SandboxEnded, row.OwnerKeyID, row.ID, map[string]any{"state": row.State, "reason": row.EndReason.String, "template": row.Template})
+	}
 	actor := row.OwnerKeyID
 	if principal, ok := auth.FromContext(ctx); ok {
 		actor = principal.ID
@@ -273,6 +280,7 @@ func (s *Service) transition(ctx context.Context, row db.Sandbox, event Event, r
 	// Snapshot restores record their own event once the workspace is populated, so the
 	// duration includes the restore.
 	if next == Running && row.Source != "snapshot" {
+		s.events.Publish(events.SandboxCreated, row.OwnerKeyID, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source})
 		s.audit.Record("sandbox.created", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "source": row.Source, "duration_seconds": max(0, s.clock.Now().Sub(row.CreatedAt).Seconds())})
 	} else if terminal(next) {
 		s.audit.Record("sandbox.destroyed", actor, row.ID, map[string]any{"template": row.Template, "runtime": row.Runtime, "reason": reason})

@@ -35,9 +35,9 @@ limits:
     max_timeout_seconds: 3600
     max_output_bytes: 10485760
     max_concurrent_per_sandbox: 8
-#     tail_buffer_bytes: 262144      # v0.3, dashboard output tail per exec
-#     tail_retention_seconds: 300    # v0.3
-#     max_tail_subscribers: 10       # v0.3
+    tail_buffer_bytes: 262144       # in-memory output tail per exec (dashboard)
+    tail_retention_seconds: 300
+    max_tail_subscribers: 10
   files:
     max_file_bytes: 52428800
     max_archive_bytes: 524288000
@@ -84,13 +84,13 @@ snapshots:
 
 audit:
   retention_days: 30
-# 
-# ui:                               # v0.3
-#   enabled: true
-#   session_ttl_seconds: 43200
-#   allowed_origins: []             # extra origins if served behind another hostname
-#   event_buffer: 1000
-# 
+
+ui:
+  enabled: true
+  session_ttl_seconds: 43200
+  allowed_origins: []             # extra origins if served behind another hostname
+  event_buffer: 1000
+
 log:
   level: info                     # debug | info | warn | error
   format: json                    # json | text
