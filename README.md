@@ -3,15 +3,19 @@
 Self-hosted sandboxes for AI agents, written in Go. Arcana turns a Linux Docker
 host into an authenticated REST/WebSocket service for ephemeral, isolated work.
 
-v0.2 adds isolated allowlist networking through a per-sandbox egress proxy, warm
-pools, workspace-ready templates (base, Python, Node, Go), metadata-only audit
-events, Prometheus metrics with a Grafana stack, per-key creation rate limits,
-and release packaging (archives, deb/rpm, container image, installer and systemd
-unit). It builds on v0.1: sandbox lifecycle, synchronous and streaming exec,
-binary file and archive transfers, resource limits, volume or tmpfs workspaces,
-TTL/idle cleanup, crash reconciliation, API keys, a Go client, CLI, and host
-diagnostics. Sandbox networking defaults to `none`; isolation defaults to gVisor
-(`runsc`).
+v0.3 adds workspace snapshots with restore and fork (try several approaches from
+one starting point), an MCP server (`arcana mcp`), Python and TypeScript SDKs, a
+read-only web dashboard at `/ui` with live command output, a published
+documentation site, a reference coding agent, a benchmark harness and a
+development container. v0.2 added isolated allowlist networking through a
+per-sandbox egress proxy, warm pools, workspace-ready templates (base, Python,
+Node, Go), metadata-only audit events, Prometheus metrics with a Grafana stack,
+per-key creation rate limits, and release packaging (archives, deb/rpm, container
+image, installer and systemd unit). It builds on v0.1: sandbox lifecycle,
+synchronous and streaming exec, binary file and archive transfers, resource
+limits, volume or tmpfs workspaces, TTL/idle cleanup, crash reconciliation, API
+keys, a Go client, CLI, and host diagnostics. Sandbox networking defaults to
+`none`; isolation defaults to gVisor (`runsc`).
 
 ![Creating a sandbox, running Python in it, moving a file in and cleaning up with the Arcana CLI](docs/tapes/quickstart.gif)
 
@@ -21,6 +25,21 @@ diagnostics. Sandbox networking defaults to `none`; isolation defaults to gVisor
 parallel variants forked from one snapshot ([recording](docs/images/dashboard.gif)).*
 
 Documentation site sources are in [docs/](docs/) (built with VitePress; see the [architecture](docs/architecture.md)).
+
+## Performance highlights
+
+Measured with `arcana bench` on a small 2 vCPU shared VM (not the PRD reference host), gVisor runsc,
+20 samples per scenario ([full results and caveats](docs/benchmarks.md)):
+
+| Metric | PRD target | Measured p50 |
+|---|---|---|
+| Cold create (image cached) | ≤ 2 s | 206 ms |
+| Warm-pool acquire | ≤ 150 ms | 5.6 ms |
+| Exec of `true` | ≤ 100 ms | 94 ms (narrow margin) |
+| Snapshot of 10 MiB / restore | no target | 569 ms / 811 ms |
+
+The density target (20 idle sandboxes on 8 GB) was **not** tested: the run was capped at 12 on this
+host. Treat percentiles above p50 as indicative and repeat on your own hardware.
 
 Self-hosting guides: [install](docs/install.md), [configuration](docs/configuration.md),
 [security model](docs/security.md), [networking](docs/networking.md) and
@@ -44,7 +63,10 @@ own sandboxes; other owners' resources are hidden with 404 responses.
 host or VM. Keep the API on localhost; remote access needs a TLS-terminating
 reverse proxy and protected API keys. `runc` requires an explicit insecure-runtime
 opt-in and relies on the shared host kernel. It is not a strong isolation boundary
-for hostile code. See the [threat model](docs/PRD.md#12-security-and-threat-model)
+for hostile code. The dashboard is read-only: browser sessions use a cookie that can only
+read (GET/HEAD) and sign out, never create, execute or delete, and the page is served with a
+strict Content-Security-Policy; sandbox output is rendered as inert text and kept only in memory.
+See the [threat model](docs/PRD.md#12-security-and-threat-model)
 and [escape suite](docs/escape-v1.md).
 
 ## Quickstart on Ubuntu 24.04
@@ -164,8 +186,7 @@ go install -ldflags="-X main.version=v0.1.0" github.com/brendatamaar/arcana/cmd/
 
 It still needs a locally built/configured template image and the host prerequisites.
 The binary embeds static Linux helpers for amd64 and arm64; it needs no compiler
-at serve time. Distribution packages and official published template images are
-planned for v0.2.
+at serve time. Release archives, packages and the container image include the dashboard.
 
 ## CLI and API
 
@@ -258,7 +279,7 @@ Environment overrides use `ARCANA_` and `__`, for example
 ## Development and validation
 
 ```bash
-CGO_ENABLED=0 make build VERSION=v0.2.0
+CGO_ENABLED=0 make build VERSION=v0.3.0
 make check
 ARCANA_REQUIRE_RUNSC=1 make test-integration test-escape
 ```
@@ -268,6 +289,9 @@ Runtime/escape tests need a Linux Docker host with runsc and clean up their
 installation-owned resources. They are adversarial tests; use a dedicated VM.
 CI validates the same marked quickstart blocks above on a fresh Ubuntu 24.04
 runner with the documented prerequisites, then runs the integration/escape suite.
+
+To work in a ready-made environment (Codespaces or Dev Containers), see the
+[development container](docs/devcontainer.md).
 
 Read [AGENTS.md](docs/AGENTS.md), [PRD.md](docs/PRD.md), and [PLAN.md](docs/PLAN.md)
 before contributing. See the [changelog](CHANGELOG.md) and [architecture decisions](docs/decisions).

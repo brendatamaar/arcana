@@ -397,10 +397,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `.devcontainer/` (devcontainer.json with Docker-in-Docker, Go, Node LTS, Python 3.12; pnpm via corepack in `post-create.sh`; ports 7070/9090 forwarded) and `setup-runtime.sh`, which installs and registers runsc, proves it with `docker run --runtime=runsc`, and otherwise writes a dev-only config with `oci_runtime: runc` + `allow_insecure_runtime: true` and a banner printed on creation, every start and every new terminal. Documented in `docs/devcontainer.md` (added to the docs sidebar). Checked locally: script syntax, JSON validity, forced-runc and detect-only paths, and that `arcana serve` accepts the generated config and logs the insecure-runtime warning. **Not verified:** a real Codespaces creation (the Verify step needs one, and whether runsc works there is unknown), the apt-based gVisor install path (this host already has runsc), and shellcheck (not installed here).
 
-### [ ] T3.10 v0.3 release
+### [~] T3.10 v0.3 release
 - **Deps:** T3.1–T3.9
 - **Do:** README polish (recording, dashboard screenshot, benchmark highlights, security summary), CHANGELOG, tag `v0.3.0`; confirm release binaries include the dashboard.
 - **Verify:** all CI workflows green; `/ui` loads from a downloaded release binary.
+
+> Status: release preparation done, **tag not created or pushed** (outward-facing; waiting for the owner). README now has a v0.3 summary, performance highlights (with the untested density target stated plainly), the dashboard's read-only/CSP security summary and a link to the devcontainer; stale v0.1/v0.2 wording was fixed; CHANGELOG has a `[0.3.0] - 2026-11-12` section. Release binaries include the dashboard: `.goreleaser.yaml` runs `make web` before building, the GHCR image copies the same binary, and a `CGO_ENABLED=0 go build -trimpath` binary from this tree served `/ui/` with the real dashboard page and the FR-WD-9 CSP. **Not verified:** the Verify line itself — all CI workflows green (nothing pushed), and `/ui` from a downloaded release artifact. Remaining: push `main`, confirm CI (including the sdk, web, docs and goreleaser jobs and Pages), tag `v0.3.0`, download an archive and check `/ui`.
 
 ---
 
@@ -541,3 +543,4 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-12 — OPEN (T3.4): run `make eval-agent` with a real local model (FIXAGENT_BASE_URL/FIXAGENT_MODEL, e.g. Ollama) and record the table and failures in docs/agent-results.md, for single-attempt and `--parallel 4`. The build environment had no model endpoint and ~1 GB RAM, so the acceptance item "runs end-to-end on at least one fixture with a local model; results recorded including failures" is unmet; no results were invented. Owner chose to leave this pending. Does not block T3.5–T3.7; T3.8 needs the real results for its demo recording.
 
 - 2026-11-12 — Resolved by owner: T3.3 SDK dependencies (generated clients plus `ws`/`websockets` for streaming) approved; see ADR 0005.
+- 2026-11-12 — Open — May I push `main` and tag `v0.3.0`? CI for Phase 3 (sdk, web, docs, goreleaser, Pages) has never run, and the T3.10 Verify step needs it; the T3.9 Codespaces check and real-model fix-agent run (T3.4) also remain unverified. — blocking T3.10.
