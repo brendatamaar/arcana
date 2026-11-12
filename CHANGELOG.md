@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `arcana mcp`, an MCP stdio server (official Go SDK) with `create_sandbox`, `run_command`, `read_file`, `write_file`, `list_files`, `snapshot_sandbox`, `fork_sandbox` and `destroy_sandbox` tools. Sandboxes are labelled `mcp_session=<id>` and destroyed when the session ends unless kept. See `docs/mcp.md`.
+
 - Add workspace snapshots, restore and fork: `POST /v1/sandboxes/{id}/snapshots`, `GET/DELETE /v1/snapshots`, `POST /v1/snapshots/{id}/fork` and `from_snapshot` on sandbox creation, with Go client methods and `arcana snapshot create|list|rm`, `arcana fork` and `sandbox create --from-snapshot`. Archives are streamed out and extracted only inside sandboxes, verified by SHA-256 on restore, and bounded by `snapshots.max_per_key`, `snapshots.max_total_bytes` and `snapshots.max_fork`. Environment values are never stored.
 
 ## [0.2.0] - 2026-11-09

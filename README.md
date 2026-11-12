@@ -192,6 +192,8 @@ arcana snapshot list
 arcana snapshot rm "$snapshot_id"
 ```
 
+MCP-capable agents can use Arcana directly through `arcana mcp` (see [MCP server](docs/mcp.md)).
+
 A partial fork prints the sandboxes it created, lists the failures on stderr and
 exits non-zero. See [operations](docs/operations.md#snapshots) for limits.
 
@@ -230,7 +232,7 @@ Environment overrides use `ARCANA_` and `__`, for example
   `open` network mode does not exist.
 - Snapshots capture the workspace only, not running processes, the container or
   environment values, and a workspace that changes while it is archived can make
-  the snapshot fail. MCP, other SDKs and a dashboard are later-phase work.
+  the snapshot fail. Other SDKs and a dashboard are later-phase work.
 
 ## Development and validation
 

@@ -326,11 +326,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added the `snapshots` migration/queries, `snapshots.*` config, OpenAPI endpoints (create/list/get/delete/fork, `from_snapshot`), orchestrator snapshot/restore/fork, Go client, and `arcana snapshot create|list|rm`, `arcana fork`, `sandbox create --from-snapshot`. Archives are streamed through exec into `data_dir/snapshots` (0600) with SHA-256, verified again on the streamed descriptor before in-sandbox extraction; count/byte budgets are reserved before streaming; failed restores destroy the sandbox (`restore_failed`); startup reconciliation prunes `.part`/unrecorded files. Fork reports per-index failures, charges one creation token per member and cleans up on disconnect. A unit test found a real race (exec transport closing stdin while the copy loop was still reading an `os.File`), fixed in `archiveInput`. Integration test on real runsc installs a package into a `/workspace` venv, snapshots, forks 3, checks the package in each, isolation between forks, corrupt-archive rejection and deletion. Hash-check mutation was caught by tests. make check, full serial make test-integration and make test-escape passed. Fork/list/get request shapes were not specified in PRD §10; defined there and in the Decision log. `web-check` not applicable before T3.7.
 
-### [ ] T3.2 MCP server
+### [x] T3.2 MCP server
 - **Deps:** T3.1 · **PRD:** FR-MC-1…3, FR-CL-4
 - **Do:** `internal/mcp` with the official MCP Go SDK, stdio transport, tools listed in PRD, session labelling and cleanup. Docs with a config snippet for MCP clients (for example Claude Desktop or Claude Code).
 - **Acceptance:** tests using the SDK's in-memory client transport for each tool; manual test with a real MCP client noted in PR.
 - **Verify:** `go test ./internal/mcp/...`
+
+> Done: Added `internal/mcp` (official Go SDK v1.8.0) with the eight PRD tools, limits stated in descriptions, bounded replies (64 KiB per stream, 1 MiB file reads/writes), Arcana error codes without request internals, and `mcp_session=<id>` labelling with cleanup of unkept sandboxes/forks when the session ends. `arcana mcp` serves stdio (frame cap 4 MiB; logs to stderr). Tests use the SDK's in-memory client transport for every tool, a CLI pipe test, and a runsc integration test drives all tools through the real API (session label, snapshot/fork, cleanup). Docs and client config snippets in docs/mcp.md. **Not done:** a manual run with a real third-party MCP client (Claude Desktop/Code) — none is available in this environment; the SDK's own client was used instead.
 
 ### [ ] T3.3 Python and TypeScript SDKs
 - **Deps:** T3.1 · **PRD:** FR-SD-2
@@ -485,6 +487,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 - 2026-11-12 — Fork returns `201` with `items` and per-index `failures` when at least one member was created, else the first failure's error; each member consumes one creation token and runs through the normal quota path; created members are destroyed if the client disconnects — PRD §10 only named the endpoint, so this defines its shape and keeps partial failure visible without leaking orphans — T3.1, PRD §10.2.
 
 - 2026-11-12 — Snapshot byte and count budgets are reserved before streaming (in-flight snapshots count) — concurrent requests cannot overshoot `snapshots.max_per_key` or `snapshots.max_total_bytes`; no new dependency was needed — T3.1.
+
+- 2026-11-12 — Use the approved MCP Go SDK v1.8.0 (Apache-2.0/MIT) and accept its transitive modules: google/jsonschema-go (MIT), segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3), golang.org/x/oauth2 and x/time (BSD-3) — they are required to build the SDK, all permissive and Apache-2.0 compatible; no other dependency added — T3.2.
 
 ## Open questions
 
