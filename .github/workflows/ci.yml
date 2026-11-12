@@ -29,6 +29,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DavidAnson/markdownlint-cli2-action@v19
+  sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: corepack enable pnpm
+      - name: Install Python SDK with the pinned generator
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -e "sdk/python[dev]"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: Generated SDK code is current
+        run: make sdk-verify-generated
+      - name: Build the sandbox template image
+        run: docker build -t arcana-base:local templates/base
+      - name: Test both SDKs against a live Arcana (runc; the runsc suites are in the security job)
+        run: make sdk-test PYTHON=python
   goreleaser:
     runs-on: ubuntu-24.04
     steps:

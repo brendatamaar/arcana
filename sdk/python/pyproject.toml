@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcana-sdk"
+version = "0.3.0"
+description = "Python client for the Arcana self-hosted sandbox orchestrator"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "attrs>=25.0",
+  "httpx2>=2.16",
+  "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+# Pinned (the generator formats its output with ruff) so `make sdk-generate` reproduces the committed code.
+dev = ["openapi-python-client==0.30.0", "ruff==0.17.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

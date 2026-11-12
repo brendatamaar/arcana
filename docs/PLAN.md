@@ -334,10 +334,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 > Done: Added `internal/mcp` (official Go SDK v1.8.0) with the eight PRD tools, limits stated in descriptions, bounded replies (64 KiB per stream, 1 MiB file reads/writes), Arcana error codes without request internals, and `mcp_session=<id>` labelling with cleanup of unkept sandboxes/forks when the session ends. `arcana mcp` serves stdio (frame cap 4 MiB; logs to stderr). Tests use the SDK's in-memory client transport for every tool, a CLI pipe test, and a runsc integration test drives all tools through the real API (session label, snapshot/fork, cleanup). Docs and client config snippets in docs/mcp.md. **Not done:** a manual run with a real third-party MCP client (Claude Desktop/Code) — none is available in this environment; the SDK's own client was used instead.
 
-### [ ] T3.3 Python and TypeScript SDKs
+### [x] T3.3 Python and TypeScript SDKs
 - **Deps:** T3.1 · **PRD:** FR-SD-2
 - **Do:** `sdk/python` and `sdk/typescript` generated from `api/openapi.yaml` (choose generators and record in an ADR), plus hand-written streaming exec wrappers and README examples; CI job running each SDK's tests against a live Arcana with runc.
 - **Verify:** SDK test commands documented in each SDK README; CI green.
+
+> Done: Added `sdk/typescript` (openapi-typescript + openapi-fetch, `ws` for streaming; Node >=18; `node --test`) and `sdk/python` (openapi-python-client 0.30.0 pinned with ruff, httpx2/attrs at runtime, `websockets` for streaming; Python >=3.11; `unittest`), each a generated layer plus a hand-written wrapper for exec (argv/shell, stdin), WebSocket streaming exec (binary-safe, stdin framing, resize, cancel), raw file/archive transfer, snapshot/fork (partial failures returned), admin and typed errors. Unit tests run against in-process fake HTTP/WebSocket servers and found two real bugs (unhandled rejection on a pre-start error frame; output lost between `started` and handler registration). `scripts/with-arcana.sh` starts a throwaway Arcana; the live tests of both SDKs passed against it on runsc. `make sdk-generate`/`sdk-verify-generated` (idempotent, verified) and `make sdk-test` added; ADR 0005 records the choices; the owner approved the dependencies. **Not verified:** the new CI `sdk` job (runc, Node 22) has not run on GitHub yet, and the SDKs were tested locally on Node 18 and Python 3.12 only. The Python generator omits the `application/gzip` archive endpoints, which the wrapper implements by hand.
 
 ### [ ] T3.4 Reference agent and fixtures
 - **Deps:** T3.2 · **PRD:** FR-SD-3, FR-SD-4
@@ -490,6 +492,8 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-12 — Use the approved MCP Go SDK v1.8.0 (Apache-2.0/MIT) and accept its transitive modules: google/jsonschema-go (MIT), segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3), golang.org/x/oauth2 and x/time (BSD-3) — they are required to build the SDK, all permissive and Apache-2.0 compatible; no other dependency added — T3.2.
 
+- 2026-11-12 — SDK dependencies approved by the owner: openapi-typescript, openapi-fetch and `ws` (TypeScript); openapi-python-client (pinned with ruff), httpx2, attrs and `websockets` (Python); Node built-in test runner and `unittest` instead of Vitest/pytest — generated layers committed, wrappers hand-written for streaming, raw bodies and errors — T3.3, docs/decisions/0005-sdk-generation.md.
+
 ## Open questions
 
 
@@ -513,3 +517,5 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
 
 - 2026-11-09 — Resolved: approved cgroup-based ESC-03 checks passed in isolation and the full escape suite; T2.5 verification is complete.
+
+- 2026-11-12 — Resolved by owner: T3.3 SDK dependencies (generated clients plus `ws`/`websockets` for streaming) approved; see ADR 0005.

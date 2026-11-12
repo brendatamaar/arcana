@@ -207,6 +207,9 @@ curl --fail-with-body "$ARCANA_URL/v1/sandboxes/$sandbox_id/exec" \
   --data '{"cmd":["/bin/echo","hello"],"timeout_seconds":10}'
 ```
 
+Python and TypeScript SDKs live in [sdk/python](sdk/python) and [sdk/typescript](sdk/typescript),
+generated from the OpenAPI contract with streaming exec, files and snapshot/fork helpers.
+
 The public [Go client](pkg/client) includes typed methods, errors, contexts,
 bounded transfer readers, and streaming exec controls with GoDoc examples.
 See the [configuration reference](docs/configuration.md) and
@@ -232,7 +235,7 @@ Environment overrides use `ARCANA_` and `__`, for example
   `open` network mode does not exist.
 - Snapshots capture the workspace only, not running processes, the container or
   environment values, and a workspace that changes while it is archived can make
-  the snapshot fail. Other SDKs and a dashboard are later-phase work.
+  the snapshot fail. A dashboard is later-phase work.
 
 ## Development and validation
 
