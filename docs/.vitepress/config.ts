@@ -37,6 +37,7 @@ export default defineConfig({
           { text: "Configuration", link: "/configuration" },
           { text: "Operations", link: "/operations" },
           { text: "Networking", link: "/networking" },
+          { text: "Kubernetes (Helm)", link: "/kubernetes" },
           { text: "Rate limits", link: "/rate-limits" },
           { text: "Audit log", link: "/audit" },
         ],

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: arcana
+description: Single-node Arcana sandbox orchestrator that drives the node's Docker Engine. Read the trade-offs in README.md first.
+type: application
+version: 0.1.0
+appVersion: "0.3.0"
+home: https://github.com/brendatamaar/arcana
+sources:
+  - https://github.com/brendatamaar/arcana
+kubeVersion: ">=1.27.0-0"

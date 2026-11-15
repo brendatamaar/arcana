@@ -1,0 +1,14 @@
+Arcana is starting on node {{ .Values.nodeName }}. It controls that node's Docker Engine:
+treat anyone who can reach its API, or edit this release, as root on the node.
+
+1. First start only: read the admin API key (it is printed once and saved on the node):
+     kubectl logs deploy/{{ include "arcana.fullname" . }} --namespace {{ .Release.Namespace }} | grep -i admin
+   or read {{ .Values.dataDir }}/admin.key on the node.
+
+2. Reach the API without exposing it:
+     kubectl port-forward svc/{{ include "arcana.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }} --namespace {{ .Release.Namespace }}
+   then ARCANA_URL=http://127.0.0.1:{{ .Values.service.port }} ARCANA_API_KEY=<key> arcana sandbox list
+
+3. The API speaks plain HTTP. Put TLS in front of it before exposing it beyond the cluster.
+
+Check the install with: helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}

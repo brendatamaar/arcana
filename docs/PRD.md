@@ -809,7 +809,7 @@ Until official images are published (v0.2), build the included minimal base with
 | Docker Compose | v0.2 | `deploy/compose/`: Arcana + Prometheus + Grafana with provisioned dashboard |
 | systemd | v0.2 | `deploy/systemd/arcana.service` with a dedicated `arcana` user in the `docker` group |
 | Devcontainer | v0.3 | Best-effort Codespaces support; falls back to runc with a clear warning if gVisor cannot run |
-| Helm | Stretch | Single-node DaemonSet-style chart |
+| Helm | Stretch | Single-node chart: one Deployment pinned to a node that runs Docker Engine (T4.6); see `docs/kubernetes.md` for the trade-offs |
 
 gVisor installation is documented (apt repository, then `sudo runsc install` and a Docker restart) and checked by `doctor`.
 

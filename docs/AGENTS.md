@@ -100,7 +100,7 @@ internal/
 pkg/client/            public Go client
 api/openapi.yaml       API contract (source of truth for the API)
 templates/             template Dockerfiles                (v0.2)
-deploy/                config example, compose, systemd, grafana
+deploy/                config example, compose, systemd, grafana, helm
 scripts/               install.sh and dev scripts
 test/
   integration/         cross-package integration tests

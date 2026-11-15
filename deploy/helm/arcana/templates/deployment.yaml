@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arcana.fullname" . }}
+  labels:
+    {{- include "arcana.labels" . | nindent 4 }}
+spec:
+  # Exactly one replica, always: two Arcanas on one database and one Docker Engine would
+  # fight over the same containers. Recreate stops the old pod before starting the new one.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "arcana.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arcana.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include "arcana.config" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "arcana.fullname" . }}
+      automountServiceAccountToken: false
+      nodeName: {{ required "set nodeName to the node that runs Arcana" .Values.nodeName | quote }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.user.uid }}
+        runAsGroup: {{ .Values.user.gid }}
+        fsGroupChangePolicy: OnRootMismatch
+        # Group access to the Docker socket, without running as root.
+        supplementalGroups:
+          - {{ required "set docker.socketGroup to the GID that owns the Docker socket" .Values.docker.socketGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: arcana
+          image: {{ include "arcana.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--config", "/etc/arcana/config.yaml"]
+          ports:
+            - name: api
+              containerPort: 7070
+            - name: metrics
+              containerPort: 9090
+          readinessProbe:
+            httpGet: { path: /v1/health, port: api }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /v1/health, port: api }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/arcana
+              readOnly: true
+            - name: data
+              mountPath: {{ .Values.dataDir | quote }}
+            - name: docker-socket
+              mountPath: {{ .Values.docker.socketPath | quote }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "arcana.fullname" . }}
+        # Same path inside and outside the pod: see README.md.
+        - name: data
+          hostPath:
+            path: {{ .Values.dataDir | quote }}
+            type: Directory
+        - name: docker-socket
+          hostPath:
+            path: {{ .Values.docker.socketPath | quote }}
+            type: Socket
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

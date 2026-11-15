@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["nodeName", "docker", "dataDir", "user"],
+  "properties": {
+    "nodeName": { "type": "string", "minLength": 1, "description": "The node that runs Arcana and its sandboxes." },
+    "docker": {
+      "type": "object",
+      "required": ["socketPath", "socketGroup"],
+      "properties": {
+        "socketPath": { "type": "string", "pattern": "^/[^\\s]+$" },
+        "socketGroup": { "type": "integer", "minimum": 1, "description": "GID that owns the Docker socket; 0 (root) is refused." }
+      }
+    },
+    "dataDir": { "type": "string", "pattern": "^/[^\\s]+$", "not": { "const": "/" } },
+    "user": {
+      "type": "object",
+      "required": ["uid", "gid"],
+      "properties": {
+        "uid": { "type": "integer", "minimum": 1 },
+        "gid": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": { "type": { "enum": ["ClusterIP", "NodePort", "LoadBalancer"] } }
+    },
+    "image": {
+      "type": "object",
+      "properties": { "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] } }
+    }
+  }
+}

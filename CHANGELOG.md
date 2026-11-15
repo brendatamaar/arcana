@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add a Helm chart (`deploy/helm/arcana`, `make helm-check`, docs/kubernetes.md) that runs Arcana as one Deployment pinned to one node and drives that node's Docker Engine. It is root-equivalent on the node, needs Docker Engine and gVisor on that node, mounts its data directory by `hostPath` at the same path, and has never been installed on a real cluster (it is linted, rendered, schema-validated and asserted on, not run).
+
 - Add a containerd driver (`internal/runtime/containerd`, ADR 0009) that runs sandboxes directly on containerd with the runsc shim and the same hardening as the Docker driver, written as OCI spec edits that a test asserts. It supports network mode `none` and tmpfs workspaces only, is not wired into `arcana serve`, and has **not been run against a real containerd**. New dependency (owner-approved): the containerd v2 client.
 
 - **Dashboard write actions (T4.4, ADR 0008).** The dashboard can now create sandboxes from a template, keep them alive, snapshot and destroy them, fork and delete snapshots, and, for admin keys, create and revoke API keys and browse the audit log. Cookie sessions now authorize writes only with a matching `Origin` and the session's CSRF token (`X-CSRF-Token`, returned by `POST /v1/sessions` and the new `GET /v1/sessions/current`, which also reports `admin`); key management also needs the admin key typed again (`X-Arcana-Reauth`). Escape tests ESC-25 to ESC-27 were added.

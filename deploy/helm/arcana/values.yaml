@@ -1,0 +1,80 @@
+# Arcana creates sandbox containers by talking to the NODE's Docker Engine, so this chart
+# gives the pod root-equivalent control of that node. Run it on a dedicated node and read
+# README.md before installing.
+
+image:
+  repository: ghcr.io/brendatamaar/arcana
+  # Defaults to the chart's appVersion. Pin a digest for production.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# The pod is pinned to one node: sandboxes live in that node's Docker Engine and the data
+# directory is a path on it. REQUIRED (the value of the node's kubernetes.io/hostname label).
+nodeName: ""
+
+# The node's Docker Engine.
+docker:
+  # hostPath of the Docker socket on the node, mounted at the same path in the pod.
+  socketPath: /var/run/docker.sock
+  # REQUIRED: numeric GID that owns the socket on the node (`stat -c %g /var/run/docker.sock`).
+  socketGroup: null
+
+# The node directory for Arcana's database, admin key, helper binary and snapshots. It is
+# mounted at the SAME absolute path in the pod, because Docker bind-mounts the helper into
+# every sandbox using the node's path. It must exist and be writable by `user` (see README.md).
+dataDir: /var/lib/arcana
+
+# The UID and GID Arcana runs as. They must own dataDir on the node.
+user:
+  uid: 1000
+  gid: 1000
+
+service:
+  type: ClusterIP
+  port: 7070
+  # Expose the Prometheus listener on the Service too (it has no authentication).
+  metrics:
+    enabled: false
+    port: 9090
+
+# Admit traffic to the API only from pods matching this selector (and metrics, if enabled).
+# Empty means "do not create a NetworkPolicy". A NetworkPolicy needs a CNI that enforces it.
+networkPolicy:
+  enabled: false
+  allowFrom: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+podAnnotations: {}
+podLabels: {}
+
+# Arcana's configuration (see docs/configuration.md). The chart sets data_dir, the listen
+# addresses and runtime.docker.host itself; everything else here is yours. runc is refused
+# unless allow_insecure_runtime is true.
+config:
+  runtime:
+    docker:
+      oci_runtime: runsc
+      allow_insecure_runtime: false
+  network:
+    proxy_image: ""   # empty: the same image as above
+  templates:
+    - name: base
+      image: ghcr.io/brendatamaar/arcana-base:latest
+      warm_pool: 0
+    - name: python
+      image: ghcr.io/brendatamaar/arcana-python:latest
+      warm_pool: 0
+    - name: node
+      image: ghcr.io/brendatamaar/arcana-node:latest
+      warm_pool: 0
+    - name: go
+      image: ghcr.io/brendatamaar/arcana-go:latest
+      warm_pool: 0
