@@ -89,6 +89,7 @@ internal/
     docker/            Docker Engine driver
     fake/              in-memory driver for tests
     firecracker/       Firecracker microVM driver (stretch; needs /dev/kvm)
+    containerd/        containerd driver (stretch; needs a containerd socket)
   store/               SQLite, migrations, queries
     migrations/        goose SQL migrations
     queries/           sqlc SQL
@@ -188,6 +189,7 @@ Approved (prefer stdlib first):
 | Firecracker (stretch) | `github.com/firecracker-microvm/firecracker-go-sdk` |
 | Netlink (stretch) | `github.com/vishvananda/netlink` |
 | envd RPC (stretch; owner approved 2026-11-15) | `google.golang.org/grpc`, `google.golang.org/protobuf`, `golang.org/x/sys` |
+| containerd driver (stretch; owner approved 2026-11-15) | `github.com/containerd/containerd/v2` |
 | Proto code generation (tools; owner approved 2026-11-15) | `github.com/bufbuild/protocompile` (via `scripts/genproto`), `protoc-gen-go`, `protoc-gen-go-grpc` |
 
 Dashboard (`web/`, from v0.3):

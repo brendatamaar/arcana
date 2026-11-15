@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add a containerd driver (`internal/runtime/containerd`, ADR 0009) that runs sandboxes directly on containerd with the runsc shim and the same hardening as the Docker driver, written as OCI spec edits that a test asserts. It supports network mode `none` and tmpfs workspaces only, is not wired into `arcana serve`, and has **not been run against a real containerd**. New dependency (owner-approved): the containerd v2 client.
+
 - **Dashboard write actions (T4.4, ADR 0008).** The dashboard can now create sandboxes from a template, keep them alive, snapshot and destroy them, fork and delete snapshots, and, for admin keys, create and revoke API keys and browse the audit log. Cookie sessions now authorize writes only with a matching `Origin` and the session's CSRF token (`X-CSRF-Token`, returned by `POST /v1/sessions` and the new `GET /v1/sessions/current`, which also reports `admin`); key management also needs the admin key typed again (`X-Arcana-Reauth`). Escape tests ESC-25 to ESC-27 were added.
 - **Security fix:** a session cookie could reach the WebSocket exec stream and the file read endpoints from a same-origin request, because they are `GET`s. Cookies now reach only an allowlist of the dashboard's routes; exec, the exec stream, files and archives need an API key. Cross-site pages were never able to use this (`SameSite=Strict`, Origin checks).
 - Fix: the dashboard's log viewer jumped to a newer entry of the exec history (the server's own workspace scans are listed there) instead of staying on the command being watched.

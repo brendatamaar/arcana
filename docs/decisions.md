@@ -10,6 +10,8 @@ evidence behind the choice.
 - [0005: SDKs generated from the OpenAPI contract](decisions/0005-sdk-generation.md)
 - [0006: `envd`, the in-sandbox gRPC daemon](decisions/0006-envd.md)
 - [0007: the Firecracker driver](decisions/0007-firecracker-driver.md)
+- [0008: dashboard write actions and CSRF protection](decisions/0008-dashboard-writes-and-csrf.md)
+- [0009: the containerd driver](decisions/0009-containerd-driver.md)
 
 The measurements behind the early decisions are in the spike reports:
 [runsc exec](spikes/001-runsc-exec.md), [process termination](spikes/002-process-termination.md),

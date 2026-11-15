@@ -332,6 +332,7 @@ Reference host: Linux, 4 vCPU, 8 GB RAM, SSD, Docker with `runsc`, `base` templa
 | `internal/envd` | The `envd` gRPC server, transports and generated `envdpb` API |
 | `internal/runtime/firecracker` | Firecracker microVM driver (stretch, ADR 0007; not yet run on KVM, not wired into `serve`) |
 | `cmd/arcana-init` | PID 1 inside Firecracker guests: mounts, limits, starts `envd` |
+| `internal/runtime/containerd` | containerd driver with the runsc shim (stretch, ADR 0009; not yet run on a real containerd, not wired into `serve`) |
 | `internal/config` | Load, default, validate, env-override configuration |
 | `internal/api` | HTTP handlers, middleware, error mapping; `internal/api/gen` holds generated code |
 | `internal/auth` | API key generation, hashing, verification, middleware |
