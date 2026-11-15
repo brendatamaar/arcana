@@ -44,6 +44,7 @@ type Exec struct {
 	Truncated   sql.NullInt64
 	StdoutBytes sql.NullInt64
 	StderrBytes sql.NullInt64
+	Internal    int64
 }
 
 type Meta struct {

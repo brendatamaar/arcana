@@ -100,7 +100,7 @@ func (q *Queries) CountSnapshots(ctx context.Context, owner interface{}) (int64,
 }
 
 const createExec = `-- name: CreateExec :one
-INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at) VALUES (?,?,?,?,?,?,?) RETURNING id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes
+INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at,internal) VALUES (?,?,?,?,?,?,?,?) RETURNING id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes, internal
 `
 
 type CreateExecParams struct {
@@ -111,6 +111,7 @@ type CreateExecParams struct {
 	Cwd       sql.NullString
 	Tty       int64
 	StartedAt time.Time
+	Internal  int64
 }
 
 func (q *Queries) CreateExec(ctx context.Context, arg CreateExecParams) (Exec, error) {
@@ -122,6 +123,7 @@ func (q *Queries) CreateExec(ctx context.Context, arg CreateExecParams) (Exec, e
 		arg.Cwd,
 		arg.Tty,
 		arg.StartedAt,
+		arg.Internal,
 	)
 	var i Exec
 	err := row.Scan(
@@ -139,6 +141,7 @@ func (q *Queries) CreateExec(ctx context.Context, arg CreateExecParams) (Exec, e
 		&i.Truncated,
 		&i.StdoutBytes,
 		&i.StderrBytes,
+		&i.Internal,
 	)
 	return i, err
 }
@@ -435,7 +438,7 @@ func (q *Queries) FinishExec(ctx context.Context, arg FinishExecParams) (int64, 
 }
 
 const getExec = `-- name: GetExec :one
-SELECT id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes FROM execs WHERE id = ?
+SELECT id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes, internal FROM execs WHERE id = ?
 `
 
 func (q *Queries) GetExec(ctx context.Context, id string) (Exec, error) {
@@ -456,6 +459,7 @@ func (q *Queries) GetExec(ctx context.Context, id string) (Exec, error) {
 		&i.Truncated,
 		&i.StdoutBytes,
 		&i.StderrBytes,
+		&i.Internal,
 	)
 	return i, err
 }
@@ -656,7 +660,7 @@ func (q *Queries) ListActiveSandboxes(ctx context.Context, id string) ([]Sandbox
 }
 
 const listExecs = `-- name: ListExecs :many
-SELECT id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes FROM execs WHERE sandbox_id = ? AND id > ? ORDER BY id LIMIT MIN(MAX(CAST(?3 AS INTEGER), 1), 1000)
+SELECT id, sandbox_id, command, is_shell, cwd, tty, started_at, ended_at, exit_code, timed_out, cancelled, truncated, stdout_bytes, stderr_bytes, internal FROM execs WHERE sandbox_id = ? AND id > ? ORDER BY id LIMIT MIN(MAX(CAST(?3 AS INTEGER), 1), 1000)
 `
 
 type ListExecsParams struct {
@@ -689,6 +693,7 @@ func (q *Queries) ListExecs(ctx context.Context, arg ListExecsParams) ([]Exec, e
 			&i.Truncated,
 			&i.StdoutBytes,
 			&i.StderrBytes,
+			&i.Internal,
 		); err != nil {
 			return nil, err
 		}
@@ -704,7 +709,7 @@ func (q *Queries) ListExecs(ctx context.Context, arg ListExecsParams) ([]Exec, e
 }
 
 const listExecsNewestFirst = `-- name: ListExecsNewestFirst :many
-SELECT x.id, x.sandbox_id, x.command, x.is_shell, x.cwd, x.tty, x.started_at, x.ended_at, x.exit_code, x.timed_out, x.cancelled, x.truncated, x.stdout_bytes, x.stderr_bytes FROM execs x WHERE x.sandbox_id = ?1
+SELECT x.id, x.sandbox_id, x.command, x.is_shell, x.cwd, x.tty, x.started_at, x.ended_at, x.exit_code, x.timed_out, x.cancelled, x.truncated, x.stdout_bytes, x.stderr_bytes, x.internal FROM execs x WHERE x.sandbox_id = ?1 AND x.internal = 0
 AND (?2 = '' OR (x.started_at, x.id) < (SELECT e.started_at, e.id FROM execs e WHERE e.id = ?2))
 ORDER BY x.started_at DESC, x.id DESC LIMIT MIN(MAX(CAST(?3 AS INTEGER), 1), 1000)
 `
@@ -739,6 +744,7 @@ func (q *Queries) ListExecsNewestFirst(ctx context.Context, arg ListExecsNewestF
 			&i.Truncated,
 			&i.StdoutBytes,
 			&i.StderrBytes,
+			&i.Internal,
 		); err != nil {
 			return nil, err
 		}

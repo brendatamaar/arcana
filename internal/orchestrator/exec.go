@@ -86,7 +86,12 @@ func (s *Service) executePlan(ctx context.Context, p auth.Principal, id string, 
 	if stream != nil && stream.TTY {
 		tty = 1
 	}
-	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started}); err != nil {
+	// Scans and file transfers are recorded but flagged, so the exec history lists only commands someone ran.
+	internal := int64(0)
+	if files != nil || plan.maintenance {
+		internal = 1
+	}
+	if _, err = s.store.Queries.CreateExec(ctx, db.CreateExecParams{ID: execID, SandboxID: id, Command: plan.command, IsShell: shell, Cwd: sql.NullString{String: plan.cwd, Valid: true}, Tty: tty, StartedAt: started, Internal: internal}); err != nil {
 		return ExecResult{}, fmt.Errorf("recording exec start: %w", err)
 	}
 	// argv is stored as JSON; a shell string is stored raw and must be quoted to be valid metadata,

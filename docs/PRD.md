@@ -228,7 +228,7 @@ The v0.1 Go client accepts an injected HTTP client and contexts, exposes typed A
 - **FR-WD-7 [v0.3]** Exec output tail `GET /v1/sandboxes/{id}/execs/{exec_id}/output` (SSE): replays buffered output, then streams live output until the exec ends. Both sync and streaming execs feed a per-exec in-memory ring buffer (`limits.exec.tail_buffer_bytes`) that is dropped `limits.exec.tail_retention_seconds` after the exec ends, so output is still never persisted (FR-EX-8). Subscribers per exec are capped by `limits.exec.max_tail_subscribers`.
 Implementation notes (T3.6, see `docs/events.md`): a cookie request is refused unless `Origin` equals the request's own origin or a `ui.allowed_origins` entry, or (GET/HEAD without `Origin`) `Sec-Fetch-Site` is `same-origin`; an `Authorization` header always wins over the cookie; each key keeps at most 20 sessions. Events cover user execs only (not file transfers or watchdog scans), never carry output, arguments or owner identity, and pool events are admin-only. Output tails are fixed rings in memory, readable until `tail_retention_seconds` after the exec ends, then replaced by a single `end` event with `expired: true`; there are at most 512 tails and 256 event streams. An unknown exec returns `sandbox_not_found`. `exit_code` in events and tails is null when the real status could not be confirmed.
 
-- **FR-WD-8 [v0.3]** Supporting read endpoints: `GET /v1/sandboxes/{id}/execs` (exec history from the `execs` table, paginated), `GET /v1/sandboxes/{id}/history` (the persisted state transitions behind the detail page's state history) and `GET /v1/overview` (Overview page data; admin keys see global numbers, other keys see their own).
+- **FR-WD-8 [v0.3]** Supporting read endpoints: `GET /v1/sandboxes/{id}/execs` (exec history from the `execs` table, paginated; workspace scans and file transfers are recorded but flagged `internal` and left out, like the live events), `GET /v1/sandboxes/{id}/history` (the persisted state transitions behind the detail page's state history) and `GET /v1/overview` (Overview page data; admin keys see global numbers, other keys see their own).
 - **FR-WD-9 [v0.3]** Hardened static serving under `/ui`: `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, plus `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Client routes fall back to `index.html`; hashed assets get long-lived cache headers, `index.html` gets `no-cache`.
 - **FR-WD-10 [v0.3]** The dashboard is optional at build time. A binary built without the frontend (for example with `go install`) serves a short page at `/ui` explaining that release binaries include the dashboard. Release builds always include it.
 - **FR-WD-11 [v0.3]** Works at desktop width and stays readable on a phone; light and dark themes follow the OS setting; keyboard navigable, with labelled controls and WCAG AA contrast.
@@ -599,7 +599,8 @@ execs(
   is_shell INTEGER NOT NULL, cwd TEXT, tty INTEGER NOT NULL DEFAULT 0,
   started_at TIMESTAMP NOT NULL, ended_at TIMESTAMP,
   exit_code INTEGER, timed_out INTEGER, cancelled INTEGER, truncated INTEGER,
-  stdout_bytes INTEGER, stderr_bytes INTEGER)
+  stdout_bytes INTEGER, stderr_bytes INTEGER,
+  internal INTEGER NOT NULL DEFAULT 0)                   -- 1 for workspace scans and file transfers
 
 snapshots(                                               -- v0.3
   id TEXT PRIMARY KEY, owner_key_id TEXT NOT NULL, source_sandbox_id TEXT NOT NULL,

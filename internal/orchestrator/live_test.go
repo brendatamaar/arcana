@@ -13,6 +13,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/auth"
 	"github.com/brendatamaar/arcana/internal/events"
 	"github.com/brendatamaar/arcana/internal/runtime/fake"
+	"github.com/brendatamaar/arcana/internal/store/db"
 )
 
 func collect(sub *events.Subscription) []events.Event {
@@ -302,5 +303,40 @@ func TestAudit_ShellExecStartIsRecordedNotSilentlyDropped(t *testing.T) {
 	}
 	if args, ok := started[1]["command"].([]any); !ok || len(args) != 2 || args[0] != "ls" {
 		t.Fatalf("argv exec: %v", started[1])
+	}
+}
+
+// Workspace scans and file transfers are recorded in the exec table (FR-EX-8) but are not
+// commands anyone ran, so the user-facing history leaves them out, as the live events do.
+func TestListExecs_OmitsInternalScansAndFileTransfers(t *testing.T) {
+	s, d, p, _, row, _ := execFixture(t)
+	d.script = fake.Script{}
+	user, err := s.Exec(context.Background(), p, row.ID, argv("pytest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	argvScan := []string{"du", "-sb", "/workspace"}
+	scan, err := resolveExec(s.cfg, ExecRequest{Cmd: &argvScan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan.maintenance = true
+	if _, err = s.executePlan(context.Background(), auth.Principal{Admin: true}, row.ID, scan, nil, &fileIO{limit: 4096}); err != nil {
+		t.Fatal(err)
+	}
+	transfer, err := resolveExec(s.cfg, ExecRequest{Cmd: &argvScan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.executePlan(context.Background(), p, row.ID, transfer, nil, &fileIO{limit: 4096}); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.store.Queries.ListExecs(context.Background(), db.ListExecsParams{SandboxID: row.ID, PageLimit: 10})
+	if err != nil || len(all) != 3 {
+		t.Fatalf("every exec must still be recorded: %d %v", len(all), err)
+	}
+	page, err := s.ListExecs(context.Background(), p, row.ID, 10, "")
+	if err != nil || len(page) != 1 || page[0].ID != user.ID {
+		t.Fatalf("the history must hold only the command that was run: %+v %v", page, err)
 	}
 }

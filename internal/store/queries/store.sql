@@ -50,7 +50,7 @@ UPDATE sandboxes SET state = ?, container_id = ?, ended_at = ?, end_reason = ? W
 UPDATE sandboxes SET last_activity_at = MAX(last_activity_at,sqlc.arg(last_activity_at)) WHERE id = sqlc.arg(id) AND state = 'running';
 
 -- name: CreateExec :one
-INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at) VALUES (?,?,?,?,?,?,?) RETURNING *;
+INSERT INTO execs (id,sandbox_id,command,is_shell,cwd,tty,started_at,internal) VALUES (?,?,?,?,?,?,?,?) RETURNING *;
 
 -- name: GetExec :one
 SELECT * FROM execs WHERE id = ?;
@@ -115,7 +115,7 @@ DELETE FROM sessions WHERE id IN (SELECT o.id FROM sessions o WHERE o.key_id = ?
 SELECT count(*) FROM sessions s JOIN api_keys k ON k.id = s.key_id WHERE s.expires_at > ? AND k.revoked_at IS NULL;
 
 -- name: ListExecsNewestFirst :many
-SELECT x.* FROM execs x WHERE x.sandbox_id = sqlc.arg(sandbox_id)
+SELECT x.* FROM execs x WHERE x.sandbox_id = sqlc.arg(sandbox_id) AND x.internal = 0
 AND (sqlc.arg(cursor) = '' OR (x.started_at, x.id) < (SELECT e.started_at, e.id FROM execs e WHERE e.id = sqlc.arg(cursor)))
 ORDER BY x.started_at DESC, x.id DESC LIMIT MIN(MAX(CAST(sqlc.arg(page_limit) AS INTEGER), 1), 1000);
 

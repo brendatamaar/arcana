@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fix: the exec history (`GET /v1/sandboxes/{id}/execs`, and so the dashboard) no longer lists the server's own workspace scans or file transfers. They are still recorded in the `execs` table (new `internal` column, migration 00006) but are not commands anyone ran, which matches the live events.
+
 - Add a Helm chart (`deploy/helm/arcana`, `make helm-check`, docs/kubernetes.md) that runs Arcana as one Deployment pinned to one node and drives that node's Docker Engine. It is root-equivalent on the node, needs Docker Engine and gVisor on that node, mounts its data directory by `hostPath` at the same path, and has never been installed on a real cluster (it is linted, rendered, schema-validated and asserted on, not run).
 
 - Add a containerd driver (`internal/runtime/containerd`, ADR 0009) that runs sandboxes directly on containerd with the runsc shim and the same hardening as the Docker driver, written as OCI spec edits that a test asserts. It supports network mode `none` and tmpfs workspaces only, is not wired into `arcana serve`, and has **not been run against a real containerd**. New dependency (owner-approved): the containerd v2 client.
