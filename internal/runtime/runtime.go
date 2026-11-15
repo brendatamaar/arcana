@@ -102,3 +102,12 @@ func (e Invalid) Error() string { return "invalid runtime field: " + e.Field }
 type Unsupported struct{ Feature string }
 
 func (e Unsupported) Error() string { return "unsupported runtime feature: " + e.Feature }
+
+// Checker is implemented by drivers that can verify their own prerequisites (the endpoint is reachable,
+// binaries and images exist) for `arcana doctor` and startup, beyond the shared host checks.
+type Checker interface {
+	// Check returns a short success detail, or an error saying what is missing.
+	Check(context.Context) (string, error)
+	// HasImage reports whether a template image (or its driver-specific equivalent) is available.
+	HasImage(ctx context.Context, image string) bool
+}

@@ -330,3 +330,20 @@ func (c *stdinCloser) Close() error {
 	})
 	return err
 }
+
+func (e *containerdEngine) Version(ctx context.Context) (string, error) {
+	v, err := e.client.Version(e.ctx(ctx))
+	if err != nil {
+		return "", err
+	}
+	return v.Version, nil
+}
+
+func (e *containerdEngine) HasImage(ctx context.Context, image string) bool {
+	named, err := reference.ParseDockerRef(image)
+	if err != nil {
+		return false
+	}
+	_, err = e.client.GetImage(e.ctx(ctx), named.String())
+	return err == nil
+}

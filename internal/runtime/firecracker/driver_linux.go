@@ -449,3 +449,35 @@ func makeWorkspace(cfg Config) func(context.Context, string, int, int, int) erro
 		return os.Chown(path, uid, gid)
 	}
 }
+
+var _ runtime.Checker = (*Driver)(nil)
+
+// Check verifies what a VM needs from the host: /dev/kvm, the Firecracker binary, the jailer (and root to
+// run it), and the kernel image.
+func (d *Driver) Check(_ context.Context) (string, error) {
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		return "", errors.New("/dev/kvm is absent or inaccessible; Firecracker needs hardware virtualization")
+	}
+	files := map[string]string{"firecracker binary": d.cfg.FirecrackerBinary, "kernel image": d.cfg.KernelImage}
+	if d.cfg.JailerBinary != "" {
+		files["jailer binary"] = d.cfg.JailerBinary
+	}
+	for what, path := range files {
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			return "", fmt.Errorf("%s %s is missing", what, path)
+		}
+	}
+	if d.cfg.JailerBinary != "" && os.Geteuid() != 0 {
+		return "", errors.New("the jailer needs Arcana to run as root; run as root, or set allow_unjailed for development")
+	}
+	if d.cfg.JailerBinary == "" {
+		return "/dev/kvm present; Firecracker UNJAILED (development only)", nil
+	}
+	return "/dev/kvm present; Firecracker and jailer found", nil
+}
+
+// HasImage reports whether a rootfs image has been built for the template image.
+func (d *Driver) HasImage(_ context.Context, image string) bool {
+	info, err := os.Stat(filepath.Join(d.cfg.RootfsDir, imageFile(image)))
+	return err == nil && info.Mode().IsRegular()
+}

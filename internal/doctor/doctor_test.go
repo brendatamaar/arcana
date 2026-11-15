@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -215,5 +216,52 @@ func TestLive_DockerMetadataAndImageDiagnostics(t *testing.T) {
 			t.Fatal("unknown probe accepted")
 		}
 		server.Close()
+	}
+}
+
+// The containerd and Firecracker drivers have no Docker networks or daemon to ask, so their check set is
+// the shared host checks plus the driver's own and one real-sandbox proof.
+func TestRun_NonDockerDriversChecksAndBlockingPolicy(t *testing.T) {
+	for _, driver := range []string{"containerd", "firecracker"} {
+		t.Run(driver, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Runtime.Driver = driver
+			report := Run(context.Background(), cfg, &fakeProbe{})
+			var names []string
+			for _, c := range report.Checks {
+				names = append(names, c.Name)
+			}
+			for _, absent := range []string{"docker", "subnets", "runsc", "runc", "kvm"} {
+				if slices.Contains(names, absent) {
+					t.Errorf("%s: the Docker-only check %q ran", driver, absent)
+				}
+			}
+			for _, want := range []string{"os", "cgroups", "data_dir", "database", "driver", "runtime"} {
+				probe := &fakeProbe{fail: want}
+				if report := Run(context.Background(), cfg, probe); !report.Failed() {
+					t.Errorf("%s: a failing %s check did not block startup", driver, want)
+				}
+				if len(probe.calls) != 8 {
+					t.Errorf("%s: independent checks were skipped after %s failed: %v", driver, want, probe.calls)
+				}
+			}
+			if report := Run(context.Background(), cfg, &fakeProbe{fail: "kernel"}); report.Failed() {
+				t.Errorf("%s: the kernel check blocks without runc", driver)
+			}
+			if report := Run(context.Background(), cfg, &fakeProbe{fail: "image:" + cfg.Templates[0].Image}); report.Failed() {
+				t.Errorf("%s: a missing image blocks startup", driver)
+			}
+		})
+	}
+	cfg := config.Default()
+	cfg.Runtime.Driver = "containerd"
+	cfg.Runtime.Containerd.OCIRuntime = "runc"
+	cfg.Runtime.Containerd.AllowInsecureRuntime = true
+	if report := Run(context.Background(), cfg, &fakeProbe{fail: "kernel"}); !report.Failed() {
+		t.Fatal("runc's kernel requirement ignored under containerd")
+	}
+	cfg.Runtime.Containerd.AllowInsecureRuntime = false
+	if report := Run(context.Background(), cfg, &fakeProbe{}); !report.Failed() {
+		t.Fatal("the runc guard was bypassed under containerd")
 	}
 }

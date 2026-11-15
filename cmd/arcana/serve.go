@@ -25,6 +25,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/orchestrator"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
+	"github.com/brendatamaar/arcana/internal/runtime/factory"
 	"github.com/brendatamaar/arcana/internal/store"
 	"github.com/brendatamaar/arcana/internal/webui"
 	"golang.org/x/sync/errgroup"
@@ -80,14 +81,18 @@ func newServeCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		driver, err := docker.New(docker.Config{OnOrphan: telemetry.Orphan, Network: &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}, Host: cfg.Runtime.Docker.Host, OCIRuntime: cfg.Runtime.Docker.OCIRuntime, AllowInsecureRuntime: cfg.Runtime.Docker.AllowInsecureRuntime, InstallID: database.InstallID, HelperPath: helperPath})
+		driver, err := factory.New(cfg, factory.Options{InstallID: database.InstallID, HelperPath: helperPath, Docker: func(c *docker.Config) {
+			c.OnOrphan = telemetry.Orphan
+			c.Network = &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}
+		}})
 		if err != nil {
 			return err
 		}
 		defer func() { _ = driver.Close() }()
-		if cfg.Runtime.Docker.OCIRuntime == "runc" {
+		if oci, _ := cfg.Runtime.OCI(); oci == "runc" {
 			logger.WarnContext(ctx, "INSECURE RUNTIME: runc shares the host kernel; explicitly opted in")
 		}
+		logger.InfoContext(ctx, "runtime driver ready", "driver", driver.Name())
 		lifecycle = orchestrator.New(database, driver, cfg, orchestrator.SystemClock{}, recorder)
 		var bus *events.Bus
 		if cfg.UI.Enabled {
@@ -153,7 +158,11 @@ func newServeCommand() *cobra.Command {
 		<-maintenanceDone
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Server.ShutdownTimeoutSeconds)*time.Second)
 		defer cancelShutdown()
-		return errors.Join(serveErr, driver.DrainDecisions(shutdownCtx), lifecycle.Shutdown(shutdownCtx))
+		var drainErr error
+		if drainer, ok := driver.(interface{ DrainDecisions(context.Context) error }); ok {
+			drainErr = drainer.DrainDecisions(shutdownCtx) // only the Docker driver runs egress proxies
+		}
+		return errors.Join(serveErr, drainErr, lifecycle.Shutdown(shutdownCtx))
 	}}
 }
 

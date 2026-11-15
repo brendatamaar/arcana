@@ -7,11 +7,13 @@ import (
 	"context"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/brendatamaar/arcana/internal/ids"
 	"github.com/brendatamaar/arcana/internal/runtime"
 )
 
@@ -170,6 +172,77 @@ func TestContainerd_Lifecycle(t *testing.T) {
 				if inst.ID == created.ID {
 					t.Fatal("a destroyed sandbox is still listed")
 				}
+			}
+		})
+	}
+}
+
+// A new driver (a restarted Arcana) finds, uses and removes containers its predecessor created.
+func TestContainerd_ASecondDriverCanAdoptAndDestroy(t *testing.T) {
+	for _, oci := range []string{"runsc", "runc"} {
+		t.Run(oci, func(t *testing.T) { adoption(t, oci) })
+	}
+}
+
+func adoption(t *testing.T, oci string) {
+	first := containerdFixture(t, oci)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	spec := runtime.Spec{SandboxID: "sbx_adoptionintegration" + map[string]string{"runsc": "a", "runc": "b"}[oci], Image: image(), WorkspaceBackend: "tmpfs", NetworkMode: "none", Resources: runtime.Resources{CPUs: 0.5, MemoryMB: 128, DiskMB: 32, PIDs: 64}}
+	created, err := first.Create(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Destroy(context.Background(), created.ID) })
+	if _, _, exit := run(t, first, created.ID, runtime.ExecRequest{Cmd: []string{"sh", "-c", "echo kept > /workspace/f"}}); exit.ExitCode != 0 {
+		t.Fatalf("%+v", exit)
+	}
+	if err = first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second := containerdFixture(t, oci)
+	listed, err := second.List(ctx)
+	if err != nil || !slices.ContainsFunc(listed, func(i runtime.Instance) bool { return i.ID == created.ID && !i.Stopped }) {
+		t.Fatalf("%+v %v", listed, err)
+	}
+	if out, _, exit := run(t, second, created.ID, runtime.ExecRequest{Cmd: []string{"cat", "/workspace/f"}}); out != "kept\n" || exit.ExitCode != 0 {
+		t.Fatalf("%q %+v", out, exit)
+	}
+	if err = second.Destroy(ctx, created.ID); err != nil {
+		t.Fatalf("destroying a container another driver created: %v", err)
+	}
+}
+
+// Sandboxes share the containerd namespace's cgroup parent, so removing one must not disturb or be blocked
+// by the others.
+func TestContainerd_DestroyingOneSandboxLeavesTheOthersRunning(t *testing.T) {
+	for _, oci := range []string{"runsc", "runc"} {
+		t.Run(oci, func(t *testing.T) {
+			d := containerdFixture(t, oci)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			var created [2]runtime.Instance
+			for i := range created {
+				id, err := ids.New("sbx")
+				if err != nil {
+					t.Fatal(err)
+				}
+				spec := runtime.Spec{SandboxID: id, Image: image(), WorkspaceBackend: "tmpfs", NetworkMode: "none", Resources: runtime.Resources{CPUs: 0.5, MemoryMB: 128, DiskMB: 32, PIDs: 64}}
+				inst, err := d.Create(ctx, spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				created[i] = inst
+				t.Cleanup(func() { _ = d.Destroy(context.Background(), inst.ID) })
+			}
+			if err := d.Destroy(ctx, created[0].ID); err != nil {
+				t.Fatalf("destroying one of two sandboxes: %v", err)
+			}
+			if out, _, exit := run(t, d, created[1].ID, runtime.ExecRequest{Cmd: []string{"echo", "alive"}}); out != "alive\n" || exit.ExitCode != 0 {
+				t.Fatalf("the other sandbox was disturbed: %q %+v", out, exit)
+			}
+			if err := d.Destroy(ctx, created[1].ID); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

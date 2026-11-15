@@ -105,6 +105,9 @@ func resolve(cfg config.Config, request CreateRequest) (resolved, error) {
 	if network != "none" && network != "allowlist" {
 		return resolved{}, fmt.Errorf("%w: unsupported network mode", ErrInvalid)
 	}
+	if network == "allowlist" && !cfg.Runtime.SupportsAllowlist() {
+		return resolved{}, fmt.Errorf("%w: the %s driver supports only network mode none", ErrInvalid, cfg.Runtime.Driver)
+	}
 	allow := make([]string, 0)
 	if len(request.NetworkAllow) > cfg.Network.MaxAllowEntries || len(request.NetworkPresets) > 50 {
 		return resolved{}, ErrInvalid

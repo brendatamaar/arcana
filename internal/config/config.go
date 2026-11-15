@@ -50,11 +50,67 @@ type Server struct {
 	DestroyOnShutdown      bool   `koanf:"destroy_on_shutdown"`
 }
 
-// Runtime selects the isolation driver.
+// Runtime selects the isolation driver and holds each driver's settings.
 type Runtime struct {
-	Driver string `koanf:"driver"`
-	Docker Docker `koanf:"docker"`
+	Driver      string      `koanf:"driver"`
+	Docker      Docker      `koanf:"docker"`
+	Containerd  Containerd  `koanf:"containerd"`
+	Firecracker Firecracker `koanf:"firecracker"`
 }
+
+// Containerd configures the containerd driver (ADR 0009).
+type Containerd struct {
+	Address              string `koanf:"address"`
+	Namespace            string `koanf:"namespace"`
+	OCIRuntime           string `koanf:"oci_runtime"`
+	AllowInsecureRuntime bool   `koanf:"allow_insecure_runtime"`
+	FIFODir              string `koanf:"fifo_dir"`
+}
+
+// Firecracker configures the Firecracker microVM driver (ADR 0007).
+type Firecracker struct {
+	FirecrackerBinary  string `koanf:"firecracker_binary"`
+	JailerBinary       string `koanf:"jailer_binary"`
+	AllowUnjailed      bool   `koanf:"allow_unjailed"`
+	KernelImage        string `koanf:"kernel_image"`
+	KernelArgs         string `koanf:"kernel_args"`
+	RootfsDir          string `koanf:"rootfs_dir"`
+	JailerUID          int    `koanf:"jailer_uid"`
+	JailerGID          int    `koanf:"jailer_gid"`
+	VsockPort          int    `koanf:"vsock_port"`
+	BootTimeoutSeconds int    `koanf:"boot_timeout_seconds"`
+}
+
+// Label names the isolation in use, as shown in sandbox records, the overview and metrics.
+func (r Runtime) Label() string {
+	switch r.Driver {
+	case "containerd":
+		return r.Containerd.OCIRuntime
+	case "firecracker":
+		return "firecracker"
+	default:
+		return r.Docker.OCIRuntime
+	}
+}
+
+// OCI returns the OCI runtime and whether insecure use was opted into. Firecracker has none.
+func (r Runtime) OCI() (name string, insecure bool) {
+	switch r.Driver {
+	case "containerd":
+		return r.Containerd.OCIRuntime, r.Containerd.AllowInsecureRuntime
+	case "firecracker":
+		return "", false
+	default:
+		return r.Docker.OCIRuntime, r.Docker.AllowInsecureRuntime
+	}
+}
+
+// SupportsAllowlist reports whether the driver can enforce network allowlists (it needs the egress
+// proxy and per-sandbox Docker networks, so only the Docker driver can).
+func (r Runtime) SupportsAllowlist() bool { return r.Driver == "docker" }
+
+// SupportsVolumeWorkspace reports whether the driver can back /workspace with a disk instead of memory.
+func (r Runtime) SupportsVolumeWorkspace() bool { return r.Driver != "containerd" }
 
 // Docker configures the Docker connection and OCI runtime.
 type Docker struct {
@@ -166,9 +222,14 @@ type Log struct {
 // Default returns an independent safe configuration.
 func Default() Config {
 	return Config{
-		Server:    Server{"127.0.0.1:7070", "127.0.0.1:9090", 30, false},
-		DataDir:   "/var/lib/arcana",
-		Runtime:   Runtime{"docker", Docker{"unix:///var/run/docker.sock", "runsc", false}},
+		Server:  Server{"127.0.0.1:7070", "127.0.0.1:9090", 30, false},
+		DataDir: "/var/lib/arcana",
+		Runtime: Runtime{
+			Driver:      "docker",
+			Docker:      Docker{"unix:///var/run/docker.sock", "runsc", false},
+			Containerd:  Containerd{Address: "/run/containerd/containerd.sock", Namespace: "arcana", OCIRuntime: "runsc", FIFODir: "/run/containerd/fifo"},
+			Firecracker: Firecracker{FirecrackerBinary: "/usr/bin/firecracker", JailerBinary: "/usr/bin/jailer", KernelImage: "/var/lib/arcana/firecracker/vmlinux", RootfsDir: "/var/lib/arcana/firecracker/rootfs", JailerUID: 10001, JailerGID: 10001, VsockPort: 1024, BootTimeoutSeconds: 30},
+		},
 		Limits:    Limits{20, 10, 30, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8, 262144, 300, 10}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
 		Workspace: Workspace{"volume", 15},
 		Network:   Network{DefaultMode: "none", SubnetPool: "10.200.0.0/16", SubnetPrefix: 28, MaxAllowEntries: 50, ProxyImage: "ghcr.io/brendatamaar/arcana:latest", ProxyDNS: []string{"1.1.1.1", "1.0.0.1"}, Presets: map[string][]string{"python": {"pypi.org", "files.pythonhosted.org"}, "node": {"registry.npmjs.org"}, "go": {"proxy.golang.org", "sum.golang.org", "storage.googleapis.com"}}},
@@ -235,21 +296,7 @@ func (c Config) Validate() error {
 	if !path.IsAbs(c.DataDir) && !filepath.IsAbs(c.DataDir) {
 		bad("data_dir", "must be absolute")
 	}
-	if c.Runtime.Driver != "docker" {
-		bad("runtime.driver", "must be docker")
-	}
-	if c.Runtime.Docker.Host == "" {
-		bad("runtime.docker.host", "must not be empty")
-	}
-	switch c.Runtime.Docker.OCIRuntime {
-	case "runsc":
-	case "runc":
-		if !c.Runtime.Docker.AllowInsecureRuntime {
-			bad("runtime.docker.allow_insecure_runtime", "must be true for runc")
-		}
-	default:
-		bad("runtime.docker.oci_runtime", "must be runsc or runc")
-	}
+	c.validateRuntime(bad)
 	if c.Limits.MaxSandboxesPerKey > c.Limits.MaxSandboxes {
 		bad("limits.max_sandboxes_per_key", "exceeds limits.max_sandboxes")
 	}
@@ -429,6 +476,77 @@ func positiveFields(v reflect.Value, prefix string, bad func(string, string)) {
 		case reflect.Float64:
 			if f.Float() <= 0 || math.IsNaN(f.Float()) || math.IsInf(f.Float(), 0) {
 				bad(key, "must be finite and positive")
+			}
+		}
+	}
+}
+
+// validateRuntime checks the selected driver's settings and that the rest of the configuration asks for
+// nothing the driver cannot provide. Settings of the unselected drivers are not checked.
+func (c Config) validateRuntime(bad func(field, message string)) {
+	oci := func(field, name string, insecure bool) {
+		switch name {
+		case "runsc":
+		case "runc":
+			if !insecure {
+				bad(field+".allow_insecure_runtime", "must be true for runc")
+			}
+		default:
+			bad(field+".oci_runtime", "must be runsc or runc")
+		}
+	}
+	absolute := func(field, value string) {
+		if !path.IsAbs(value) || path.Clean(value) != value || strings.ContainsRune(value, 0) {
+			bad(field, "must be a clean absolute path")
+		}
+	}
+	switch c.Runtime.Driver {
+	case "docker":
+		if c.Runtime.Docker.Host == "" {
+			bad("runtime.docker.host", "must not be empty")
+		}
+		oci("runtime.docker", c.Runtime.Docker.OCIRuntime, c.Runtime.Docker.AllowInsecureRuntime)
+	case "containerd":
+		oci("runtime.containerd", c.Runtime.Containerd.OCIRuntime, c.Runtime.Containerd.AllowInsecureRuntime)
+		absolute("runtime.containerd.address", c.Runtime.Containerd.Address)
+		absolute("runtime.containerd.fifo_dir", c.Runtime.Containerd.FIFODir)
+		if c.Runtime.Containerd.Namespace == "" || len(c.Runtime.Containerd.Namespace) > 64 {
+			bad("runtime.containerd.namespace", "must be 1..64 characters")
+		}
+		if c.Workspace.Backend != "tmpfs" {
+			bad("workspace.backend", "must be tmpfs with the containerd driver (it has no disk-backed workspace)")
+		}
+	case "firecracker":
+		f := c.Runtime.Firecracker
+		for field, value := range map[string]string{"firecracker_binary": f.FirecrackerBinary, "kernel_image": f.KernelImage, "rootfs_dir": f.RootfsDir} {
+			absolute("runtime.firecracker."+field, value)
+		}
+		if f.JailerBinary == "" && !f.AllowUnjailed {
+			bad("runtime.firecracker.jailer_binary", "is required unless allow_unjailed is true")
+		}
+		if f.JailerBinary != "" {
+			absolute("runtime.firecracker.jailer_binary", f.JailerBinary)
+		}
+		if len(f.KernelArgs) > 512 {
+			bad("runtime.firecracker.kernel_args", "must not exceed 512 bytes")
+		}
+		if f.VsockPort > 1<<31 {
+			bad("runtime.firecracker.vsock_port", "is out of range")
+		}
+		if f.BootTimeoutSeconds < 1 || f.BootTimeoutSeconds > 300 {
+			bad("runtime.firecracker.boot_timeout_seconds", "must be 1..300")
+		}
+	default:
+		bad("runtime.driver", "must be docker, containerd or firecracker")
+		return
+	}
+	if !c.Runtime.SupportsAllowlist() {
+		if c.Network.DefaultMode == "allowlist" {
+			bad("network.default_mode", "allowlist needs the docker driver; use none")
+		}
+		for _, template := range c.Templates {
+			if template.NetworkPreset != "" {
+				bad("templates", "template "+template.Name+" has a network_preset, which needs the docker driver")
 			}
 		}
 	}

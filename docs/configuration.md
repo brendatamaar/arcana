@@ -25,10 +25,38 @@ A test fails if a key in the config struct is missing from this page.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `runtime.driver` | `docker` | Only `docker` is supported. |
+| `runtime.driver` | `docker` | `docker`, `containerd` or `firecracker`. Settings of the drivers you do not select are not checked. The containerd and Firecracker drivers support network mode `none` only, and containerd needs `workspace.backend: tmpfs`; see [drivers](#drivers). |
 | `runtime.docker.host` | `unix:///var/run/docker.sock` | Docker endpoint. Access is root-equivalent. |
 | `runtime.docker.oci_runtime` | `runsc` | `runsc` (gVisor) or `runc`. |
 | `runtime.docker.allow_insecure_runtime` | `false` | Must be `true` to select `runc`, which shares the host kernel. |
+| `runtime.containerd.address` | `/run/containerd/containerd.sock` | containerd's socket. Access is root-equivalent. |
+| `runtime.containerd.namespace` | `arcana` | containerd namespace for Arcana's containers and images. Template images must be imported into it. |
+| `runtime.containerd.oci_runtime` | `runsc` | `runsc` (shim `io.containerd.runsc.v1`) or `runc` (`io.containerd.runc.v2`). |
+| `runtime.containerd.allow_insecure_runtime` | `false` | Must be `true` to select `runc`. |
+| `runtime.containerd.fifo_dir` | `/run/containerd/fifo` | Directory for exec named pipes. Arcana and containerd's shim must both reach it; the default is root-only, so a non-root Arcana needs another path (created `0700`). |
+| `runtime.firecracker.firecracker_binary` | `/usr/bin/firecracker` | The Firecracker binary. |
+| `runtime.firecracker.jailer_binary` | `/usr/bin/jailer` | The jailer that confines each VMM. Required unless `allow_unjailed`. The jailer needs Arcana to run as root. |
+| `runtime.firecracker.allow_unjailed` | `false` | Run Firecracker without the jailer. Development only. |
+| `runtime.firecracker.kernel_image` | `/var/lib/arcana/firecracker/vmlinux` | The guest kernel (virtio-blk, vsock and ext4 built in). Must be on the same filesystem as `data_dir`. |
+| `runtime.firecracker.kernel_args` | empty | Extra kernel arguments, appended after the fixed ones; `arcana.*` settings cannot be overridden. At most 512 bytes. |
+| `runtime.firecracker.rootfs_dir` | `/var/lib/arcana/firecracker/rootfs` | Rootfs images built by `scripts/build-rootfs.sh`, one per template image. Same filesystem as `data_dir`. |
+| `runtime.firecracker.jailer_uid` | `10001` | Unprivileged UID the VMM runs as. |
+| `runtime.firecracker.jailer_gid` | `10001` | Unprivileged GID the VMM runs as. |
+| `runtime.firecracker.vsock_port` | `1024` | Guest vsock port of `envd`. |
+| `runtime.firecracker.boot_timeout_seconds` | `30` | How long a VM may take to boot and answer `envd` (1..300). |
+
+### Drivers
+
+- **docker** is the full-featured driver: disk-backed or tmpfs workspaces and allowlist networking.
+- **containerd** ([ADR 0009](decisions/0009-containerd-driver.md)) talks to containerd directly. It needs
+  `workspace.backend: tmpfs`, supports only network mode `none`, and template images must already be in its
+  namespace (`ctr -n arcana images import`). Arcana only needs access to the socket, not to Docker.
+- **firecracker** ([ADR 0007](decisions/0007-firecracker-driver.md)) runs each sandbox in a microVM. It needs
+  `/dev/kvm`, Firecracker, the jailer and a guest kernel, supports network mode `none` only, and each template
+  image needs a rootfs built with `scripts/build-rootfs.sh`. State and jails live under `data_dir/firecracker`.
+
+A request for `allowlist` networking with a driver that cannot provide it is refused with `invalid_request`, and
+a configuration that makes `allowlist` the default or gives a template a `network_preset` is rejected at start.
 
 ## Limits
 

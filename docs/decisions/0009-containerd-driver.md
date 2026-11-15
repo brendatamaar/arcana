@@ -41,8 +41,7 @@ containerd started inside a privileged container with its socket in a directory 
   a snapshotter-backed directory would be owned by root and unwritable by UID 1000 without a privileged
   step, and the volume watchdog assumes Docker volumes. The practical effect: `workspace.backend: tmpfs`
   (memory-backed, hard size limit) is required.
-- **Not wired into `arcana serve`**, for the same reason as the Firecracker driver: the config, doctor,
-  reconciliation and template checks are Docker-shaped.
+- **Template images** must already be in the containerd namespace; the driver does not pull.
 - **Verified only nested.** containerd ran inside a privileged container, not on a bare host, and the
   server was containerd 2.2 (the client library is 2.4.2).
 
@@ -71,6 +70,20 @@ Running it found defects that the fake engine could not:
 5. The gVisor shim ignores the spec's console size, so a resize is sent after start.
 6. The gVisor shim reports cgroup v1-shaped metrics, so stats decode both formats. Short Docker-style image
    names (`arcana-base:local`) are normalised to containerd's qualified names.
+7. Found through the serve end-to-end run below: with the default cgroup path `/<namespace>/<id>`, destroying
+   one gVisor sandbox failed with `removing cgroup path /sys/fs/cgroup/arcana: device or resource busy` while
+   another sandbox ran, because gVisor tries to remove the shared parent. Each sandbox now gets a flat cgroup
+   (`/arcana-<container id>`), and a test destroys one of two running sandboxes under both runtimes.
+
+## Wired into `arcana serve`
+
+`runtime.driver: containerd` is selectable (with `workspace.backend: tmpfs`; see the
+[configuration reference](../configuration.md#drivers)). `internal/runtime/factory` builds the driver for both
+the server and the doctor, and `arcana doctor` runs a driver-specific set of checks: the shared host checks, a
+connection to containerd and one real hardened sandbox proving the helper and its process cleanup. A request
+for `allowlist` networking is refused with `invalid_request`. `scripts/containerd-serve-e2e.sh` starts a real
+Arcana on the throwaway containerd with gVisor and checks doctor, create, exec with a remote exit code, file
+round trip, snapshot, fork, the refusal, and that sandboxes survive a restart and can then be destroyed.
 
 ## Comparison with the Docker driver
 

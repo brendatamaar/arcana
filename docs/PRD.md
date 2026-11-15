@@ -720,11 +720,14 @@ server:
 data_dir: /var/lib/arcana
 
 runtime:
-  driver: docker
+  driver: docker                  # docker | containerd | firecracker (T4.5, T4.2; see docs/configuration.md)
   docker:
     host: unix:///var/run/docker.sock
     oci_runtime: runsc            # runsc | runc
     allow_insecure_runtime: false # must be true to use runc
+  # containerd: {address, namespace, oci_runtime, allow_insecure_runtime, fifo_dir}
+  # firecracker: {firecracker_binary, jailer_binary, allow_unjailed, kernel_image, kernel_args,
+  #               rootfs_dir, jailer_uid, jailer_gid, vsock_port, boot_timeout_seconds}
 
 limits:
   max_sandboxes: 20
@@ -796,6 +799,8 @@ log:
   level: info                     # debug | info | warn | error
   format: json                    # json | text
 ```
+
+`runtime.driver` selects the isolation driver (stretch, T4.2/T4.5/wiring). The containerd and Firecracker drivers support network mode `none` only and containerd needs `workspace.backend: tmpfs`; a configuration that asks otherwise is rejected at start, and a request for `allowlist` is refused with `invalid_request`. `arcana doctor` runs a driver-specific check set for them: the shared host checks, the driver's own prerequisites and one real hardened sandbox proving the helper and its cleanup. The runc guard (FR-DR-3) applies to both runtimes under `containerd`.
 
 Until official images are published (v0.2), build the included minimal base with `docker build -t arcana-base:local templates/base`. Custom templates must provide the writable workspace ownership described in FR-TP-4; sandboxes always run as UID 1000.
 

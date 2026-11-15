@@ -24,6 +24,7 @@ import (
 	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
+	"github.com/brendatamaar/arcana/internal/runtime/factory"
 	"github.com/brendatamaar/arcana/internal/store"
 )
 
@@ -181,6 +182,23 @@ func (l Live) Check(ctx context.Context, name string) (string, error) {
 		return "SQLite opens; embedded migrations current", nil
 	case "runsc", "runc":
 		return l.runtimeProbe(ctx, name)
+	case "driver", "runtime":
+		return l.driverProbe(ctx, name)
+	}
+	if l.Config.Runtime.Driver != "docker" {
+		image, ok := strings.CutPrefix(name, "image:")
+		if !ok {
+			return "", errors.New("unknown host probe")
+		}
+		driver, closeDriver, err := l.newDriver(ctx)
+		if err != nil {
+			return "", err
+		}
+		defer closeDriver()
+		if checker, isChecker := driver.(runtime.Checker); !isChecker || !checker.HasImage(ctx, image) {
+			return "", errors.New("configured image is not available to this driver; build or import it")
+		}
+		return "image present", nil
 	}
 	engine, err := client.New(client.WithHost(l.Config.Runtime.Docker.Host))
 	if err != nil {
@@ -287,6 +305,88 @@ func (l Live) runtimeProbe(ctx context.Context, oci string) (detail string, fail
 		return "", errors.New("runtime did not prove helper process cleanup")
 	}
 	return oci + " registered; hardened container and helper cleanup passed", nil
+}
+
+// newDriver builds the configured driver for a probe, with a fresh private helper.
+func (l Live) newDriver(ctx context.Context) (factory.Driver, func(), error) {
+	database, err := store.Open(ctx, filepath.Join(l.Config.DataDir, "arcana.db"))
+	if err != nil {
+		return nil, nil, err
+	}
+	install := database.InstallID
+	if err = database.Close(); err != nil {
+		return nil, nil, err
+	}
+	helperPath, err := helper.Install(ctx, l.Config.DataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	driver, err := factory.New(l.Config, factory.Options{InstallID: install, HelperPath: helperPath})
+	if err != nil {
+		return nil, nil, err
+	}
+	return driver, func() { _ = driver.Close() }, nil
+}
+
+// driverProbe checks a non-Docker driver. "driver" asks the driver whether its prerequisites exist;
+// "runtime" creates a hardened sandbox from the first available template and proves that the exec helper
+// and its process cleanup work inside it.
+func (l Live) driverProbe(ctx context.Context, name string) (detail string, failure error) {
+	if goruntime.GOOS != "linux" {
+		return "", errors.New("this driver requires Linux")
+	}
+	driver, closeDriver, err := l.newDriver(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer closeDriver()
+	checker, ok := driver.(runtime.Checker)
+	if !ok {
+		return "", errors.New("the driver cannot check itself")
+	}
+	if name == "driver" {
+		return checker.Check(ctx)
+	}
+	image := ""
+	for i, template := range l.Config.Templates {
+		if i >= 1000 {
+			break
+		}
+		if checker.HasImage(ctx, template.Image) {
+			image = template.Image
+			break
+		}
+	}
+	if image == "" {
+		return "", errors.New("runtime test needs at least one configured template image available to this driver")
+	}
+	id, err := ids.New("sbx")
+	if err != nil {
+		return "", err
+	}
+	instance, err := driver.Create(ctx, runtime.Spec{SandboxID: id, Image: image, Resources: runtime.Resources{CPUs: .25, MemoryMB: 256, DiskMB: 64, PIDs: 64}, WorkspaceBackend: "tmpfs", NetworkMode: "none", Workdir: "/workspace"})
+	if err != nil {
+		return "", fmt.Errorf("hardened test sandbox failed: %w", err)
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		failure = errors.Join(failure, driver.Destroy(cleanup, instance.ID))
+	}()
+	execID, err := ids.New("exe")
+	if err != nil {
+		return "", err
+	}
+	output, exit, err := probeExec(ctx, driver, instance.ID, []string{"/opt/arcana/sbx-exec", "run", "--id", execID, "--timeout", "2", "--", "/bin/sleep", "0"})
+	if err != nil || exit.ExitCode != 0 || len(output) != 0 {
+		return "", errors.New("runtime helper failed; child subreapers and pidfd signalling must be supported")
+	}
+	output, exit, err = probeExec(ctx, driver, instance.ID, []string{"/opt/arcana/sbx-exec", "status", "--id", execID, "--consume"})
+	var status protocol.Status
+	if err != nil || exit.ExitCode != 0 || json.Unmarshal(output, &status) != nil || status.ID != execID || !status.CleanupComplete || status.ExitCode != 0 {
+		return "", errors.New("runtime did not prove helper process cleanup")
+	}
+	return driver.Name() + ": hardened sandbox and helper cleanup passed", nil
 }
 
 func probeExec(ctx context.Context, driver runtime.Driver, instance string, argv []string) ([]byte, runtime.ExitInfo, error) {

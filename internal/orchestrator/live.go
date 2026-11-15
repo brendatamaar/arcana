@@ -93,7 +93,7 @@ func (s *Service) Overview(ctx context.Context, p auth.Principal) (Overview, err
 	if err != nil {
 		return Overview{}, fmt.Errorf("listing recent terminations: %w", err)
 	}
-	out := Overview{Runtime: s.cfg.Runtime.Docker.OCIRuntime, Recent: recent}
+	out := Overview{Runtime: s.cfg.Runtime.Label(), Recent: recent}
 	for _, c := range counts {
 		out.ActiveByTemplate = append(out.ActiveByTemplate, TemplateCount{Template: c.Template, Count: c.Active})
 	}

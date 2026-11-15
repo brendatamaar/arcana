@@ -98,6 +98,50 @@ func TestValidate(t *testing.T) {
 		{"template resources", "templates.0.resources.cpus", func(c *Config) { c.Templates[0].Resources.CPUs = -1 }},
 		{"template ttl", "templates.0.ttl_seconds", func(c *Config) { c.Templates[0].TTLSeconds = -1 }},
 		{"template workdir", "templates.0.workdir", func(c *Config) { c.Templates[0].Workdir = "relative" }},
+		{"containerd runc guard", "runtime.containerd.allow_insecure_runtime", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Runtime.Containerd.OCIRuntime = "runc"
+		}},
+		{"containerd runtime", "runtime.containerd.oci_runtime", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Runtime.Containerd.OCIRuntime = "kata"
+		}},
+		{"containerd address", "runtime.containerd.address", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Runtime.Containerd.Address = "containerd.sock"
+		}},
+		{"containerd fifo", "runtime.containerd.fifo_dir", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Runtime.Containerd.FIFODir = "../fifo"
+		}},
+		{"containerd namespace", "runtime.containerd.namespace", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Runtime.Containerd.Namespace = ""
+		}},
+		{"containerd volume workspace", "workspace.backend", func(c *Config) { c.Runtime.Driver = "containerd" }},
+		{"containerd allowlist", "network.default_mode", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Network.DefaultMode = "allowlist"
+		}},
+		{"containerd preset template", "templates", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Workspace.Backend = "tmpfs"
+			c.Templates[0].NetworkPreset = "python"
+		}},
+		{"firecracker without jailer", "runtime.firecracker.jailer_binary", func(c *Config) { c.Runtime.Driver = "firecracker"; c.Runtime.Firecracker.JailerBinary = "" }},
+		{"firecracker relative kernel", "runtime.firecracker.kernel_image", func(c *Config) { c.Runtime.Driver = "firecracker"; c.Runtime.Firecracker.KernelImage = "vmlinux" }},
+		{"firecracker relative binary", "runtime.firecracker.firecracker_binary", func(c *Config) {
+			c.Runtime.Driver = "firecracker"
+			c.Runtime.Firecracker.FirecrackerBinary = "firecracker"
+		}},
+		{"firecracker boot timeout", "runtime.firecracker.boot_timeout_seconds", func(c *Config) { c.Runtime.Driver = "firecracker"; c.Runtime.Firecracker.BootTimeoutSeconds = 301 }},
+		{"firecracker allowlist", "network.default_mode", func(c *Config) { c.Runtime.Driver = "firecracker"; c.Network.DefaultMode = "allowlist" }},
 		{"log level", "log.level", func(c *Config) { c.Log.Level = "bad" }},
 		{"log format", "log.format", func(c *Config) { c.Log.Format = "bad" }},
 	}
@@ -110,6 +154,32 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+	t.Run("other drivers are valid with their requirements met", func(t *testing.T) {
+		c := Default()
+		c.Runtime.Driver, c.Workspace.Backend = "containerd", "tmpfs"
+		if err := c.Validate(); err != nil {
+			t.Fatalf("containerd: %v", err)
+		}
+		c = Default()
+		c.Runtime.Driver = "firecracker"
+		if err := c.Validate(); err != nil {
+			t.Fatalf("firecracker: %v", err)
+		}
+		c.Runtime.Firecracker.JailerBinary, c.Runtime.Firecracker.AllowUnjailed = "", true
+		if err := c.Validate(); err != nil {
+			t.Fatalf("explicit unjailed development mode: %v", err)
+		}
+		if c.Runtime.Label() != "firecracker" || c.Runtime.SupportsAllowlist() || !c.Runtime.SupportsVolumeWorkspace() {
+			t.Fatalf("%q", c.Runtime.Label())
+		}
+	})
+	t.Run("a docker config is not checked against other drivers' settings", func(t *testing.T) {
+		c := Default()
+		c.Runtime.Containerd.Address, c.Runtime.Firecracker.KernelImage = "relative", "relative"
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("explicit runc opt in", func(t *testing.T) {
 		c := Default()
 		c.Runtime.Docker.OCIRuntime = "runc"

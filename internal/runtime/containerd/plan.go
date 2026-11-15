@@ -125,13 +125,13 @@ func planContainer(cfg Config, spec runtime.Spec) (plan, error) {
 	}
 	return plan{
 		ID: containerID(spec.SandboxID), Image: spec.Image, Labels: labels, Env: env, Workdir: workdir, Resources: r,
-		SpecOpts: hardening(cfg, workdir, r),
+		SpecOpts: hardening(cfg, containerID(spec.SandboxID), workdir, r),
 	}, nil
 }
 
 // hardening is FR-RL-2 and FR-RL-1 as OCI spec edits: the same guarantees the Docker
 // driver sets through container flags.
-func hardening(cfg Config, workdir string, r runtime.Resources) []oci.SpecOpts {
+func hardening(cfg Config, id, workdir string, r runtime.Resources) []oci.SpecOpts {
 	memory := r.MemoryMB * megabyte
 	opts := []oci.SpecOpts{
 		oci.WithUIDGID(sandboxUID, sandboxGID),
@@ -145,6 +145,9 @@ func hardening(cfg Config, workdir string, r runtime.Resources) []oci.SpecOpts {
 		oci.WithPidsLimit(r.PIDs),
 		oci.WithRlimit(&specs.POSIXRlimit{Type: "RLIMIT_NOFILE", Soft: maxFiles, Hard: maxFiles}),
 		oci.WithMounts(mounts(cfg, r)),
+		// A flat cgroup per sandbox. The default, /<namespace>/<id>, makes gVisor try to remove the shared
+		// <namespace> cgroup when one sandbox is destroyed, which fails while others run.
+		oci.WithCgroup("/arcana-" + id),
 	}
 	return opts
 }

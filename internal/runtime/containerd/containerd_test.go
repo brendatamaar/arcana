@@ -152,6 +152,9 @@ func TestHardening_ProducesTheSameGuaranteesAsTheDockerDriver(t *testing.T) {
 	if !slices.ContainsFunc(proc.Rlimits, func(r specs.POSIXRlimit) bool { return r.Type == "RLIMIT_NOFILE" && r.Hard == 1024 && r.Soft == 1024 }) {
 		t.Fatalf("rlimits %+v", proc.Rlimits)
 	}
+	if spec.Linux.CgroupsPath != "/arcana-sbx-sbx_abcdefghijklmnopqrst" {
+		t.Fatalf("each sandbox needs its own flat cgroup: %q", spec.Linux.CgroupsPath)
+	}
 	res := spec.Linux.Resources
 	if *res.Memory.Limit != 256*1024*1024 || *res.Memory.Swap != 256*1024*1024 {
 		t.Fatalf("memory %+v swap %+v", *res.Memory.Limit, *res.Memory.Swap)
@@ -239,7 +242,9 @@ func (f *fakeEngine) List(context.Context) ([]containerInfo, error) {
 func (*fakeEngine) Stats(context.Context, string) (runtime.Stats, error) {
 	return runtime.Stats{MemoryUsageBytes: 7}, nil
 }
-func (*fakeEngine) Close() error { return nil }
+func (*fakeEngine) Version(context.Context) (string, error)         { return "2.4.2", nil }
+func (f *fakeEngine) HasImage(_ context.Context, image string) bool { return image == "present" }
+func (*fakeEngine) Close() error                                    { return nil }
 
 func newDriver(t *testing.T) (*Driver, *fakeEngine) {
 	t.Helper()
@@ -324,5 +329,16 @@ func TestDriver_ListIgnoresOtherInstallationsAndUnlabelledContainers(t *testing.
 	listed, err := d.List(context.Background())
 	if err != nil || len(listed) != 1 || !listed[0].Stopped {
 		t.Fatalf("%+v %v", listed, err)
+	}
+}
+
+func TestDriver_CheckReportsTheVersionAndKnownImages(t *testing.T) {
+	d, _ := newDriver(t)
+	detail, err := d.Check(context.Background())
+	if err != nil || !strings.Contains(detail, "containerd 2.4.2") || !strings.Contains(detail, "io.containerd.runsc.v1") {
+		t.Fatalf("%q %v", detail, err)
+	}
+	if !d.HasImage(context.Background(), "present") || d.HasImage(context.Background(), "absent") {
+		t.Fatal("image lookup")
 	}
 }

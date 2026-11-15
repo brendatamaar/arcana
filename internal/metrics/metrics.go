@@ -117,7 +117,7 @@ func New(database *store.Store, cfg config.Config, pool func() map[string]int, s
 	m.registry.MustRegister(&poolCollector{names: names, source: pool, descriptor: prometheus.NewDesc("arcana_pool_available", "Fresh pool members.", []string{"template"}, nil)})
 	defaults := map[[2]string]float64{}
 	for _, template := range cfg.Templates {
-		defaults[[2]string{template.Name, cfg.Runtime.Docker.OCIRuntime}] = 0
+		defaults[[2]string{template.Name, cfg.Runtime.Label()}] = 0
 	}
 	m.registry.MustRegister(&activeCollector{defaults: defaults, database: database, descriptor: prometheus.NewDesc("arcana_sandboxes_active", "Active sandbox reservations.", []string{"template", "runtime"}, nil)})
 	for _, item := range []struct {

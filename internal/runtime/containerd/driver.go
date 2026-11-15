@@ -24,6 +24,10 @@ type engine interface {
 	// List returns containers carrying the managed label, with their labels.
 	List(ctx context.Context) ([]containerInfo, error)
 	Stats(ctx context.Context, id string) (runtime.Stats, error)
+	// Version returns containerd's version, proving the endpoint is reachable.
+	Version(ctx context.Context) (string, error)
+	// HasImage reports whether the image is in the driver's namespace.
+	HasImage(ctx context.Context, image string) bool
 	Close() error
 }
 
@@ -145,4 +149,20 @@ func (d *Driver) List(ctx context.Context) ([]runtime.Instance, error) {
 		out = append(out, runtime.Instance{ID: c.ID, SandboxID: sandbox, Labels: maps.Clone(c.Labels), Stopped: c.Stopped})
 	}
 	return out, nil
+}
+
+var _ runtime.Checker = (*Driver)(nil)
+
+// Check connects to containerd and reports its version.
+func (d *Driver) Check(ctx context.Context) (string, error) {
+	version, err := d.engine.Version(ctx)
+	if err != nil {
+		return "", fmt.Errorf("containerd is unreachable at %s: %w", d.cfg.Address, err)
+	}
+	return fmt.Sprintf("containerd %s; namespace %s; %s", version, d.cfg.Namespace, d.cfg.shimName()), nil
+}
+
+// HasImage reports whether the template image is in the configured containerd namespace.
+func (d *Driver) HasImage(ctx context.Context, image string) bool {
+	return d.engine.HasImage(ctx, image)
 }

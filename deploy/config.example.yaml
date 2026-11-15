@@ -7,11 +7,29 @@ server:
 data_dir: /var/lib/arcana
 
 runtime:
-  driver: docker
+  driver: docker                  # docker | containerd | firecracker
   docker:
     host: unix:///var/run/docker.sock
     oci_runtime: runsc            # runsc | runc
     allow_insecure_runtime: false # must be true to use runc
+  # Used only when driver is containerd (needs workspace.backend: tmpfs, network mode none).
+  # containerd:
+  #   address: /run/containerd/containerd.sock
+  #   namespace: arcana
+  #   oci_runtime: runsc
+  #   allow_insecure_runtime: false
+  #   fifo_dir: /run/containerd/fifo
+  # Used only when driver is firecracker (needs /dev/kvm, network mode none).
+  # firecracker:
+  #   firecracker_binary: /usr/bin/firecracker
+  #   jailer_binary: /usr/bin/jailer
+  #   allow_unjailed: false
+  #   kernel_image: /var/lib/arcana/firecracker/vmlinux
+  #   rootfs_dir: /var/lib/arcana/firecracker/rootfs
+  #   jailer_uid: 10001
+  #   jailer_gid: 10001
+  #   vsock_port: 1024
+  #   boot_timeout_seconds: 30
 
 limits:
   max_sandboxes: 20

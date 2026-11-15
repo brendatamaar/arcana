@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `runtime.driver` now accepts `containerd` and `firecracker`, with `runtime.containerd.*` and `runtime.firecracker.*` settings (docs/configuration.md). Both support network mode `none` only (containerd also needs `workspace.backend: tmpfs`): a configuration asking otherwise is rejected at start and an `allowlist` request is refused with `invalid_request`. `arcana doctor` runs a driver-specific check set for them. The containerd driver was verified end to end against a real containerd with gVisor (`scripts/containerd-serve-e2e.sh`); the Firecracker driver still has not run on KVM. Fix found on the way: destroying one gVisor sandbox failed while others ran, because they shared a cgroup parent.
+
 - The containerd driver now runs against a real containerd (`scripts/containerd-test.sh`, nested in a privileged container) for both runsc and runc, and six defects found that way are fixed: named image users, the container command, the exec pipe directory (new `fifo_dir`), closing stdin, the gVisor terminal size, and gVisor metrics. On runc it was about 2 to 3 times faster than the Docker driver to create, exec and destroy; gVisor create latency under containerd was not measurable in the nested harness (ADR 0009).
 
 - Add `scripts/kind-helm-e2e.sh` (`make helm-e2e`), which installs the Helm chart on a throwaway kind cluster against the host Docker and checks startup, a working sandbox, `helm test`, the pod's security context, upgrade and uninstall survival and the wrong-socket-group error. docs/kubernetes.md gains a troubleshooting section and the verified scope.
