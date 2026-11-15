@@ -40,7 +40,7 @@ func TestConfigValidate_RuncNeedsOptInAndSettingsAreChecked(t *testing.T) {
 	if err := good.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if good.shimName() != "io.containerd.runsc.v1" || good.Namespace != "arcana" {
+	if good.shimName() != "io.containerd.runsc.v1" || good.Namespace != "arcana" || good.FIFODir != "/run/containerd/fifo" {
 		t.Fatalf("%+v", good)
 	}
 	for name, mutate := range map[string]func(*Config){
@@ -52,6 +52,7 @@ func TestConfigValidate_RuncNeedsOptInAndSettingsAreChecked(t *testing.T) {
 		"unclean address":     func(c *Config) { c.Address = "/run/../etc/x.sock" },
 		"relative helper":     func(c *Config) { c.HelperPath = "sbx-exec" },
 		"missing helper":      func(c *Config) { c.HelperPath = "/nonexistent/sbx-exec" },
+		"relative fifo dir":   func(c *Config) { c.FIFODir = "fifo" },
 	} {
 		c := testConfig(t)
 		mutate(&c)

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
+	cgroup1 "github.com/containerd/cgroups/v3/cgroup1/stats"
 	cgroup2 "github.com/containerd/cgroups/v3/cgroup2/stats"
 	containerdclient "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/pkg/cio"
@@ -17,6 +19,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/typeurl/v2"
+	"github.com/distribution/reference"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -29,6 +32,9 @@ type containerdEngine struct {
 }
 
 func newContainerdEngine(cfg Config) (engine, error) {
+	if err := os.MkdirAll(cfg.FIFODir, 0o700); err != nil {
+		return nil, fmt.Errorf("creating the exec pipe directory %s (set a writable fifo_dir): %w", cfg.FIFODir, err)
+	}
 	c, err := containerdclient.New(cfg.Address, containerdclient.WithDefaultNamespace(cfg.Namespace))
 	if err != nil {
 		return nil, fmt.Errorf("connecting to containerd: %w", err)
@@ -44,11 +50,24 @@ func (e *containerdEngine) ctx(ctx context.Context) context.Context {
 
 func (e *containerdEngine) Create(ctx context.Context, p plan) error {
 	ctx = e.ctx(ctx)
-	image, err := e.client.GetImage(ctx, p.Image)
+	// containerd stores images under their fully qualified name; Docker-style short names
+	// (arcana-base:local) are normalised the way Docker would.
+	named, err := reference.ParseDockerRef(p.Image)
 	if err != nil {
-		return fmt.Errorf("template image %q is not in containerd namespace %q: %w", p.Image, e.cfg.Namespace, err)
+		return runtime.Invalid{Field: "image"}
 	}
-	opts := []oci.SpecOpts{oci.WithImageConfig(image), oci.WithEnv(p.Env)}
+	image, err := e.client.GetImage(ctx, named.String())
+	if err != nil {
+		return fmt.Errorf("template image %q is not in containerd namespace %q: %w", named.String(), e.cfg.Namespace, err)
+	}
+	imageSpec, err := image.Spec(ctx)
+	if err != nil {
+		return fmt.Errorf("reading the image config: %w", err)
+	}
+	// The image's environment (PATH, package-manager locations) applies, then the sandbox's own.
+	// oci.WithImageConfig is not used: it resolves a named USER by mounting the rootfs in this
+	// process, which a non-root client cannot do. The user is the numeric 1000:1000 set below.
+	opts := []oci.SpecOpts{oci.WithEnv(imageSpec.Config.Env), oci.WithProcessArgs("/bin/sleep", "infinity"), oci.WithEnv(p.Env)}
 	opts = append(opts, p.SpecOpts...)
 	container, err := e.client.NewContainer(ctx, p.ID,
 		containerdclient.WithImage(image),
@@ -140,19 +159,30 @@ func (e *containerdEngine) Stats(ctx context.Context, id string) (runtime.Stats,
 	if err != nil {
 		return runtime.Stats{}, err
 	}
-	m, ok := data.(*cgroup2.Metrics)
-	if !ok {
-		return runtime.Stats{}, runtime.Unsupported{Feature: "cgroup v1 metrics"}
-	}
 	var stats runtime.Stats
-	if m.CPU != nil {
-		stats.CPUUsageNano = m.CPU.UsageUsec * 1000
-	}
-	if m.Memory != nil {
-		stats.MemoryUsageBytes = m.Memory.Usage
-	}
-	if m.Pids != nil {
-		stats.PIDs = m.Pids.Current
+	switch m := data.(type) {
+	case *cgroup2.Metrics: // runc on a cgroup v2 host
+		if m.CPU != nil {
+			stats.CPUUsageNano = m.CPU.UsageUsec * 1000
+		}
+		if m.Memory != nil {
+			stats.MemoryUsageBytes = m.Memory.Usage
+		}
+		if m.Pids != nil {
+			stats.PIDs = m.Pids.Current
+		}
+	case *cgroup1.Metrics: // the gVisor shim reports v1-shaped metrics
+		if m.CPU != nil && m.CPU.Usage != nil {
+			stats.CPUUsageNano = m.CPU.Usage.Total
+		}
+		if m.Memory != nil && m.Memory.Usage != nil {
+			stats.MemoryUsageBytes = m.Memory.Usage.Usage
+		}
+		if m.Pids != nil {
+			stats.PIDs = m.Pids.Current
+		}
+	default:
+		return runtime.Stats{}, runtime.Unsupported{Feature: fmt.Sprintf("metrics of type %T", data)}
 	}
 	return stats, nil
 }
@@ -188,14 +218,14 @@ func (e *containerdEngine) Exec(ctx context.Context, id string, req runtime.Exec
 	if req.TTY {
 		process.ConsoleSize = &specs.Box{Width: uint(req.Cols), Height: uint(req.Rows)}
 	}
-	return startProcess(nsCtx, task, process, req.TTY)
+	return startProcess(nsCtx, task, process, req.TTY, e.cfg.FIFODir)
 }
 
 // session adapts a containerd process to runtime.ExecSession through in-process pipes.
 type session struct {
 	process containerdclient.Process
 	nsCtx   context.Context
-	stdin   *io.PipeWriter
+	stdin   io.WriteCloser
 	stdout  *io.PipeReader
 	stderr  *io.PipeReader
 	done    chan struct{}
@@ -204,17 +234,17 @@ type session struct {
 	exitErr error
 }
 
-func startProcess(ctx context.Context, task containerdclient.Task, spec specs.Process, tty bool) (runtime.ExecSession, error) {
+func startProcess(ctx context.Context, task containerdclient.Task, spec specs.Process, tty bool, fifoDir string) (runtime.ExecSession, error) {
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
 	var stderrR *io.PipeReader
 	var stderrW *io.PipeWriter
-	opts := []cio.Opt{cio.WithStreams(stdinR, stdoutW, nil)}
+	opts := []cio.Opt{cio.WithStreams(stdinR, stdoutW, nil), cio.WithFIFODir(fifoDir)}
 	if tty {
 		opts = append(opts, cio.WithTerminal)
 	} else {
 		stderrR, stderrW = io.Pipe()
-		opts = append(opts, cio.WithStreams(stdinR, stdoutW, stderrW))
+		opts = append(opts, cio.WithStreams(stdinR, stdoutW, stderrW), cio.WithFIFODir(fifoDir))
 	}
 	id := "x" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	process, err := task.Exec(ctx, id, &spec, cio.NewCreator(opts...))
@@ -230,7 +260,11 @@ func startProcess(ctx context.Context, task containerdclient.Task, spec specs.Pr
 		_, _ = process.Delete(ctx, containerdclient.WithProcessKill)
 		return nil, err
 	}
-	s := &session{process: process, nsCtx: ctx, stdin: stdinW, stdout: stdoutR, stderr: stderrR, done: make(chan struct{})}
+	if tty && spec.ConsoleSize != nil {
+		// runc honours the spec's console size; the gVisor shim does not, so send it as a resize too.
+		_ = process.Resize(ctx, uint32(spec.ConsoleSize.Width), uint32(spec.ConsoleSize.Height)) // #nosec G115 -- the console size comes from uint16 request fields
+	}
+	s := &session{process: process, nsCtx: ctx, stdin: &stdinCloser{PipeWriter: stdinW, process: process, ctx: ctx}, stdout: stdoutR, stderr: stderrR, done: make(chan struct{})}
 	go func() {
 		defer close(s.done)
 		status := <-exited
@@ -273,4 +307,26 @@ func (s *session) Wait(ctx context.Context) (runtime.ExitInfo, error) {
 		return runtime.ExitInfo{}, ctx.Err()
 	}
 	return s.exit, s.exitErr
+}
+
+// stdinCloser ends the process's stdin. Closing the local pipe only stops the copy into the FIFO;
+// the shim keeps the process's stdin open until it is told to close it, so a command that reads to
+// EOF (cat, tar) would wait forever without CloseIO. The pipe closes first, so every written byte has
+// already been copied when the shim is told.
+type stdinCloser struct {
+	*io.PipeWriter
+	process containerdclient.Process
+	ctx     context.Context
+	once    sync.Once
+}
+
+func (c *stdinCloser) Close() error {
+	var err error
+	c.once.Do(func() {
+		err = c.PipeWriter.Close()
+		if closeErr := c.process.CloseIO(context.WithoutCancel(c.ctx), containerdclient.WithStdinCloser); closeErr != nil && !errdefs.IsNotFound(closeErr) {
+			err = errors.Join(err, closeErr)
+		}
+	})
+	return err
 }

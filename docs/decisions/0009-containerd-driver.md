@@ -1,13 +1,16 @@
 # 0009: the containerd driver
 
-Status: accepted, **not yet run against a real containerd**. Date: 2026-11-15. Task: T4.5. The owner
-approved the containerd client dependency on 2026-11-15 and chose to build the driver unverified.
+Status: accepted; **run against a real containerd, nested in a container** (see Verification). Date:
+2026-11-15. Task: T4.5. The owner approved the containerd client dependency and, later, the effort to
+verify the driver for real.
 
 `internal/runtime/containerd` implements `runtime.Driver` directly on containerd, without the Docker
 Engine in between, using the gVisor shim (`io.containerd.runsc.v1`) by default. It exists to take
 `dockerd` out of the path for operators who already run containerd (Kubernetes nodes, for example) and
-to make the driver interface prove it is not Docker-shaped. The host it was written on has a
-containerd, but its socket is root-only and `sudo` needs a password, so nothing here has talked to one.
+to make the driver interface prove it is not Docker-shaped. It was first written without any containerd to
+talk to (the host's socket is root-only and `sudo` needs a password). It was then run for real against a
+containerd started inside a privileged container with its socket in a directory the test user owns
+(`scripts/containerd-test.sh`), which found six defects that compile-checking could not.
 
 ## What was built
 
@@ -40,12 +43,38 @@ containerd, but its socket is root-only and `sudo` needs a password, so nothing 
   (memory-backed, hard size limit) is required.
 - **Not wired into `arcana serve`**, for the same reason as the Firecracker driver: the config, doctor,
   reconciliation and template checks are Docker-shaped.
-- **Never run.** Container creation, the shim options, IO draining, metrics decoding (cgroup v2 only) and
-  snapshot cleanup are compile-checked and reviewed, not exercised.
+- **Verified only nested.** containerd ran inside a privileged container, not on a bare host, and the
+  server was containerd 2.2 (the client library is 2.4.2).
+
+## Verification
+
+`scripts/containerd-test.sh` (build tag `integration`) starts containerd in a throwaway privileged container,
+mounts the host's gVisor files and the helper at the same paths, imports the template image, and runs
+`TestContainerd_Lifecycle` for **runsc and runc**. It creates a sandbox and checks, from inside it: separate
+stdout and stderr with the real exit code, the image environment and per-sandbox environment, UID 1000, an
+empty capability set, `no_new_privs`, `RLIMIT_NOFILE` 1024, a read-only root and a read-only helper directory,
+a writable tmpfs `/workspace` and `/tmp`, a 320 KB stdin round trip, a terminal with the requested size, a
+cancelled context killing a `sleep 300`, stats, and idempotent destroy. It passes on both runtimes.
+
+Running it found defects that the fake engine could not:
+
+1. `oci.WithImageConfig` resolves a named image `USER` by mounting the rootfs in the client process, which a
+   non-root client cannot do. The driver now applies only the image's environment and sets the numeric
+   1000:1000 itself.
+2. The container had no command, so it would not stay up: it now runs `/bin/sleep infinity`, as the Docker
+   driver does. There is no tini-style init, so orphans of PID 1 are not reaped (the per-exec controller
+   adopts its own descendants).
+3. Exec uses named pipes in `/run/containerd/fifo`, which is root-only: `fifo_dir` is now configurable and
+   created `0700`.
+4. Closing a session's stdin only closed the local pipe; commands that read to EOF hung. It now also calls
+   `CloseIO`.
+5. The gVisor shim ignores the spec's console size, so a resize is sent after start.
+6. The gVisor shim reports cgroup v1-shaped metrics, so stats decode both formats. Short Docker-style image
+   names (`arcana-base:local`) are normalised to containerd's qualified names.
 
 ## Comparison with the Docker driver
 
-This is a design comparison, not a measurement; no benchmark was run.
+Design comparison first, then measurements.
 
 | | Docker driver | containerd driver |
 |---|---|---|
@@ -56,10 +85,33 @@ This is a design comparison, not a measurement; no benchmark was run.
 | Networking | `none` or allowlist with the egress proxy | `none` only |
 | Images | Pulled and checked by the engine | Must already be in the containerd namespace |
 | Operational fit | Anywhere Docker runs | Hosts that run containerd without Docker |
+| Speed (runc, nested harness) | Baseline | About 2 to 3 times faster to create, exec and destroy |
 
-Removing `dockerd` should save a process and a hop per operation. Whether that is measurable next to the
-runtime's own start-up cost (see the [runtime comparison](../runtime-comparison.md) for runc and runsc on the
-Docker path) is unknown.
+### Measurements
+
+`TestCompareWithDocker` (`ARCANA_COMPARE=1`) times the same lifecycle through both drivers with a tmpfs
+workspace and no network: 15 recorded iterations after one warm-up, p50 / p95. Host: a shared 2 vCPU VM that
+was busy with other workloads; **containerd ran nested in a privileged container, Docker on the host**, so
+this favours Docker if anything.
+
+| driver / runtime | create + start | exec of `true` | destroy |
+|---|---|---|---|
+| docker / runc | 220 ms / 282 ms | 72 ms / 88 ms | 130 ms / 135 ms |
+| containerd / runc | 81 ms / 96 ms | 32 ms / 37 ms | 57 ms / 68 ms |
+| docker / runsc | 214 ms / 246 ms | 43 ms / 47 ms | 106 ms / 138 ms |
+| containerd / runsc | **5122 ms** / 5150 ms | 37 ms / 134 ms | 85 ms / 274 ms |
+
+Two earlier runs with a different cgroup setup gave the same shape (Docker create 330 to 410 ms, containerd
+runc create 130 to 170 ms), so the runc result is repeatable here: the containerd driver is about two to three
+times faster than the Docker driver for create, exec and destroy on runc, plausibly because the Docker Engine
+sits between Arcana and containerd.
+
+**The 5.1 s for containerd with gVisor is not a driver result.** It appears with plain `ctr run -d` in the same
+harness, so it comes from running containerd nested under Docker's cgroup delegation (it disappeared when the
+cgroup controllers were not delegated, but then limits could not be applied). It could not be explained within
+the time spent, so containerd's gVisor create latency is **not measured**; exec and destroy with gVisor are
+comparable to Docker's. Repeat on a host that runs containerd directly before drawing any conclusion about
+gVisor.
 
 ## Dependency
 

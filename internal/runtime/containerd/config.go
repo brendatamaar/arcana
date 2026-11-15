@@ -27,6 +27,10 @@ type Config struct {
 	InstallID            string
 	// HelperPath is the host's sbx-exec, bind-mounted read-only into every sandbox.
 	HelperPath string
+	// FIFODir holds the named pipes of exec sessions. Both Arcana and containerd's shim open them, so
+	// it must be a path both can reach; the containerd default, /run/containerd/fifo, is root-only,
+	// which a non-root Arcana cannot use. Created with mode 0700 if missing.
+	FIFODir string
 }
 
 var namespacePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
@@ -40,6 +44,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.OCIRuntime == "" {
 		c.OCIRuntime = "runsc"
+	}
+	if c.FIFODir == "" {
+		c.FIFODir = "/run/containerd/fifo"
 	}
 }
 
@@ -67,6 +74,9 @@ func (c Config) Validate() error {
 	}
 	if !filepath.IsAbs(c.Address) || filepath.Clean(c.Address) != c.Address {
 		return runtime.Invalid{Field: "address"}
+	}
+	if !filepath.IsAbs(c.FIFODir) || filepath.Clean(c.FIFODir) != c.FIFODir {
+		return runtime.Invalid{Field: "fifo_dir"}
 	}
 	if !filepath.IsAbs(c.HelperPath) {
 		return runtime.Invalid{Field: "helper_path"}
