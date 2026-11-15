@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package arcana.envd.v1;
+
+option go_package = "github.com/brendatamaar/arcana/internal/envd/envdpb";
+
+// Envd is the in-sandbox daemon API. Every operation runs inside the sandbox as the
+// sandbox user; the host never touches workspace files directly (AGENTS rule 4).
+service Envd {
+  // Info reports the daemon version and the limits it enforces.
+  rpc Info(InfoRequest) returns (InfoResponse);
+
+  // Exec runs one command. The first client message must be Start. The server closes
+  // the stream after Exit; a client that disconnects first cancels the command and its
+  // whole process tree.
+  rpc Exec(stream ExecClientMessage) returns (stream ExecServerMessage);
+
+  // Signal terminates the whole process tree of a running exec from another RPC.
+  rpc Signal(SignalRequest) returns (SignalResponse);
+
+  rpc WriteFile(stream WriteFileRequest) returns (WriteFileResponse);
+  rpc ReadFile(ReadFileRequest) returns (stream ReadFileResponse);
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse);
+  rpc MakeDirectory(MakeDirectoryRequest) returns (MakeDirectoryResponse);
+}
+
+message InfoRequest {}
+
+message InfoResponse {
+  string version = 1;
+  uint32 max_concurrent_execs = 2;
+  uint32 max_chunk_bytes = 3;
+  repeated string allowed_roots = 4;
+}
+
+message ExecClientMessage {
+  oneof message {
+    ExecStart start = 1;
+    bytes stdin = 2;
+    StdinClose stdin_close = 3;
+    Resize resize = 4;
+    Cancel cancel = 5;
+  }
+}
+
+message ExecStart {
+  // exec_id matches ^[a-z0-9_]{1,64}$ and is unique per sandbox lifetime.
+  string exec_id = 1;
+  repeated string argv = 2;
+  string cwd = 3;
+  map<string, string> env = 4;
+  uint32 timeout_seconds = 5;
+  bool tty = 6;
+  uint32 cols = 7;
+  uint32 rows = 8;
+}
+
+message StdinClose {}
+
+message Resize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// Cancel sends SIGTERM to the process tree, then SIGKILL after grace_millis
+// (0 means kill immediately; at most 10000).
+message Cancel {
+  uint32 grace_millis = 1;
+}
+
+message ExecServerMessage {
+  oneof message {
+    ExecStarted started = 1;
+    ExecOutput output = 2;
+    ExecExit exit = 3;
+  }
+}
+
+message ExecStarted {
+  string exec_id = 1;
+}
+
+enum OutputStream {
+  OUTPUT_STREAM_UNSPECIFIED = 0;
+  OUTPUT_STREAM_STDOUT = 1;
+  OUTPUT_STREAM_STDERR = 2;
+}
+
+// In TTY mode the terminal merges both streams into STDOUT.
+message ExecOutput {
+  OutputStream stream = 1;
+  bytes data = 2;
+}
+
+// ExecExit is sent only after the controller proved that no descendant remains.
+message ExecExit {
+  int32 exit_code = 1;
+  string signal = 2;
+  bool timed_out = 3;
+  bool cancelled = 4;
+  int64 duration_millis = 5;
+}
+
+enum Signal {
+  SIGNAL_UNSPECIFIED = 0;
+  SIGNAL_TERM = 1;
+  SIGNAL_KILL = 2;
+}
+
+message SignalRequest {
+  string exec_id = 1;
+  Signal signal = 2;
+  // grace_millis applies to SIGNAL_TERM before the forced kill (default 2000, at most 10000).
+  uint32 grace_millis = 3;
+}
+
+message SignalResponse {}
+
+message WriteFileRequest {
+  oneof message {
+    WriteFileHeader header = 1;
+    bytes chunk = 2;
+  }
+}
+
+// The first WriteFile message is the header; the rest are chunks.
+message WriteFileHeader {
+  string path = 1;
+  uint64 max_bytes = 2;
+}
+
+message WriteFileResponse {
+  uint64 size_bytes = 1;
+}
+
+message ReadFileRequest {
+  string path = 1;
+  uint64 max_bytes = 2;
+}
+
+// The first ReadFile message carries size_bytes with no data; the rest carry data.
+message ReadFileResponse {
+  oneof message {
+    uint64 size_bytes = 1;
+    bytes chunk = 2;
+  }
+}
+
+message ListFilesRequest {
+  string path = 1;
+  uint32 depth = 2;
+}
+
+message FileEntry {
+  string name = 1;
+  string path = 2;
+  string type = 3;
+  int64 size_bytes = 4;
+  int64 mode = 5;
+  int64 modified_unix_nanos = 6;
+}
+
+message ListFilesResponse {
+  repeated FileEntry items = 1;
+}
+
+message RemoveFileRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message RemoveFileResponse {
+  int64 removed_size_bytes = 1;
+}
+
+message MakeDirectoryRequest {
+  string path = 1;
+}
+
+message MakeDirectoryResponse {}

@@ -1,5 +1,7 @@
-// Command sbx-exec supervises isolated command lifetimes.
-package main
+// Package sbxexec implements the in-sandbox exec controller and file utilities shared by
+// the sbx-exec helper and the envd daemon. It uses only the standard library. This file
+// holds the lifecycle decisions of one supervised command, free of effects and clock reads.
+package sbxexec
 
 import "time"
 
@@ -20,6 +22,8 @@ type outcome struct {
 	Reason stopReason
 }
 
+// State is the lifecycle state of one supervised command.
+//
 //sumtype:decl
 type State interface{ isState() }
 
@@ -40,6 +44,8 @@ func (Stopping) isState() {}
 func (Draining) isState() {}
 func (Finished) isState() {}
 
+// Input is an observation or request that moves a command through its lifecycle.
+//
 //sumtype:decl
 type Input interface{ isInput() }
 
@@ -75,6 +81,8 @@ const (
 	killTree
 )
 
+// Command is an effect the shell must perform on behalf of a transition.
+//
 //sumtype:decl
 type Command interface{ isCommand() }
 
@@ -145,4 +153,18 @@ func Run(inputs []Input) State {
 		state, _ = Step(state, input)
 	}
 	return state
+}
+
+// ValidID reports whether id is acceptable as an exec identifier (1..64 of a-z, 0-9, _).
+func ValidID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }

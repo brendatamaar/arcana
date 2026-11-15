@@ -326,6 +326,9 @@ Reference host: Linux, 4 vCPU, 8 GB RAM, SSD, Docker with `runsc`, `base` templa
 |---|---|
 | `cmd/arcana` | Main binary and Cobra commands |
 | `cmd/sbx-exec` | In-sandbox exec helper (static binary, embedded into Arcana) |
+| `cmd/envd` | In-sandbox gRPC daemon for the Firecracker driver (stretch, ADR 0006) |
+| `internal/sbxexec` | Exec controller and file utilities shared by `sbx-exec` and `envd` (stdlib only) |
+| `internal/envd` | The `envd` gRPC server, transports and generated `envdpb` API |
 | `internal/config` | Load, default, validate, env-override configuration |
 | `internal/api` | HTTP handlers, middleware, error mapping; `internal/api/gen` holds generated code |
 | `internal/auth` | API key generation, hashing, verification, middleware |
@@ -382,7 +385,7 @@ Helper transport exits are `0` for a completed successful command, `124` for a c
 
 After client cancellation, the host allows at most 10 seconds to confirm command cleanup; otherwise it destroys the sandbox. If consuming status races with the kill control, an already-validated completed run remains authoritative once both host operations have ended.
 
-The helper is the seed of the stretch-goal `envd` daemon used by the Firecracker driver.
+The helper is the seed of the stretch-goal `envd` daemon used by the Firecracker driver. T4.1 delivered it (ADR 0006): its controller and file utilities now live in `internal/sbxexec`, and `envd serve` exposes exec (streaming, stdin, TTY, resize, cancel), `Signal`, and file operations over gRPC on a Unix socket or host-only vsock. Each exec still runs under a child controller (this same binary's `run`), so the completion proof, process-tree cleanup and host acceptance rule above apply unchanged; files run in child processes as the sandbox user after the same path validation. The Docker driver continues to use `sbx-exec` through Docker exec.
 
 ### 9.5 Labels and naming
 
@@ -863,6 +866,7 @@ A Grafana dashboard JSON lives in `deploy/grafana/` and is provisioned by the Co
 | Fork | Creating several sandboxes from one snapshot |
 | runsc | gVisor's OCI runtime |
 | Egress proxy | The component that enforces the outbound allowlist |
+| envd | The in-sandbox gRPC daemon (stretch) that lets a host run commands and move files in a sandbox without Docker exec |
 | Reconciliation | Matching real Docker objects to database state at startup and removing orphans |
 | Dashboard | The read-only React web UI served at `/ui` |
 | Session | A browser login for the dashboard, created from an API key and carried in a cookie |

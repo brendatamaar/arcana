@@ -408,8 +408,10 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Phase 4 — Stretch
 
-### [ ] T4.1 `envd` in-sandbox daemon
+### [x] T4.1 `envd` in-sandbox daemon
 - **Deps:** T3.10 · Evolve `sbx-exec` into a gRPC daemon (exec, files, streaming, signals) usable over Unix socket or vsock. ADR required.
+
+> Done: Added `cmd/envd` and `internal/envd`: a gRPC daemon (`envd.proto`, package `arcana.envd.v1`) with streaming `Exec` (stdin, TTY, resize, cancel, disconnect cancels), `Signal`, and `WriteFile`/`ReadFile`/`ListFiles`/`RemoveFile`/`MakeDirectory`, over a 0600 Unix socket or host-only (CID 2) raw `AF_VSOCK`. It re-runs itself as the unchanged `sbx-exec` controller per exec, so subreaper/pidfd cleanup and the completion proof still apply (an unproven exit is `DATA_LOSS`), and runs file operations in child processes as the sandbox user after path validation. To share the code, the helper moved to `internal/sbxexec`; `sbx-exec` is a thin `main`, behaves the same, and its embedded binaries were rebuilt. Writing the tests found a real bug in the new file path (an oversized upload committed the bytes received before the limit, replacing the old file); fixed, and `sbx-exec write` now removes its temporary on SIGTERM so abandoned uploads leave nothing. Verified: `make check` (envd coverage 80.5%), unit tests against a real daemon, two guard mutations caught (completion proof, abort-on-bad-upload), and `make test-integration` and `make test-escape` (serial) pass, including a probe running inside fully hardened containers under **runsc and runc** (exit codes, `setsid` descendants reaped on timeout and cancel, TTY size, symlink to `/etc/passwd` resolving to the sandbox's file, traversal rejected, runs as UID 1000). ADR 0006 records the design. **Not verified:** a real microVM or any vsock traffic from a host (no `/dev/kvm`; only the peer policy is unit-tested), and `--user` privilege drop with the daemon running as root. Nothing in Arcana uses `envd` yet; embedding/installing it is T4.2. The local integration suite needs `make templates` and `make proxy-image` first.
 
 ### [ ] T4.2 Firecracker driver
 - **Deps:** T4.1 · `internal/runtime/firecracker` with `firecracker-go-sdk`: rootfs images built from templates, tap networking, vsock to envd, memory snapshots. Skipped in tests when `/dev/kvm` is absent.
@@ -508,6 +510,10 @@ Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
 
 - 2026-11-12 — SDK dependencies approved by the owner: openapi-typescript, openapi-fetch and `ws` (TypeScript); openapi-python-client (pinned with ruff), httpx2, attrs and `websockets` (Python); Node built-in test runner and `unittest` instead of Vitest/pytest — generated layers committed, wrappers hand-written for streaming, raw bodies and errors — T3.3, docs/decisions/0005-sdk-generation.md.
 
+- 2026-11-15 — `envd` is a gRPC daemon built from the `sbx-exec` code: the controller and file utilities moved to `internal/sbxexec` and the daemon re-runs itself as controller and file utility — one static binary for the microVM rootfs, and the proven subreaper/pidfd cleanup, completion proof and path validation are reused unchanged; transport (private Unix socket or host-only vsock) is the trust boundary, so no TLS — T4.1, ADR 0006, PRD §9.4.
+
+- 2026-11-15 — Add `google.golang.org/grpc` and `google.golang.org/protobuf` (promoted from indirect), `golang.org/x/sys` (BSD-3, raw `AF_VSOCK`/pty ioctls instead of a vsock library), and, as code-generation tools, `github.com/bufbuild/protocompile` (Apache-2.0, pure Go) with the pinned `protoc-gen-go` and `protoc-gen-go-grpc` — owner approved the first three explicitly and protocompile as the proto compiler, so `make verify-generated` needs no `protoc` install — T4.1, scripts/genproto.
+
 ## Open questions
 
 
@@ -545,3 +551,4 @@ Append entries as `YYYY-MM-DD — question — context — blocking task (if any
 - 2026-11-12 — Resolved by owner: T3.3 SDK dependencies (generated clients plus `ws`/`websockets` for streaming) approved; see ADR 0005.
 - 2026-11-12 — Resolved by owner approval (push and tag done) — May I push `main` and tag `v0.3.0`? CI for Phase 3 (sdk, web, docs, goreleaser, Pages) has never run, and the T3.10 Verify step needs it; the T3.9 Codespaces check and real-model fix-agent run (T3.4) also remain unverified. — blocking T3.10.
 - 2026-11-12 — Open — Enable GitHub Pages (Settings → Pages → Source: GitHub Actions) so the Docs workflow can deploy the site; no real-model fix-agent run (owner has no endpoint) and no Codespaces check (owner cannot) — T3.8/T3.4/T3.9 caveats.
+- 2026-11-15 — Resolved by owner: T4.1 may use gRPC and protobuf (not on the approved list), raw `AF_VSOCK` syscalls through `golang.org/x/sys` instead of a vsock library, and protocompile as a pinned `go tool`-driven proto compiler — T4.1.

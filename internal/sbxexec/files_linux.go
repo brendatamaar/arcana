@@ -1,4 +1,4 @@
-package main
+package sbxexec
 
 import (
 	"crypto/rand"
@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 
@@ -115,6 +116,20 @@ func writeSandboxFile(filename string, limit int64, stdin io.Reader) error {
 	defer func() {
 		_ = file.Close()
 		_ = os.Remove(temporary) // #nosec G703 -- only our sandbox-local temporary path
+	}()
+	// A caller that abandons the upload (the envd daemon, on a broken stream) sends
+	// SIGTERM; remove the temporary instead of leaving it or committing a partial file.
+	terminated := make(chan os.Signal, 1)
+	signal.Notify(terminated, syscall.SIGTERM)
+	finished := make(chan struct{})
+	defer func() { signal.Stop(terminated); close(finished) }()
+	go func() {
+		select {
+		case <-terminated:
+			_ = os.Remove(temporary) // #nosec G703 -- only our sandbox-local temporary path
+			os.Exit(protocol.FileInvalid)
+		case <-finished:
+		}
 	}()
 	n, err := io.Copy(file, io.LimitReader(stdin, limit+1))
 	if err != nil {

@@ -1,7 +1,7 @@
 {
   "go_version": "go1.27.3",
   "sha256": {
-    "linux_amd64.bin": "4c0da48833dc8c7cb39f584b91010c9ff6619bff365c0f3067e8860c9fc3769f",
-    "linux_arm64.bin": "adc5ea29226bb71d83e879e2b0e4233759c55b5c3f20321fc3cbefc2c21b4559"
+    "linux_amd64.bin": "054ff0e1e63d129bdd407c0908b03cc0d2a93c1b1db9404473c59f5086901537",
+    "linux_arm64.bin": "d6ff68eec6c86c475139e9cde9eead4096a1852171a74b630597b4646322cd3c"
   }
 }

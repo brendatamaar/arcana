@@ -3,13 +3,18 @@ COMMIT ?= $(shell git rev-parse --short HEAD)
 BUILD_DATE ?= $(shell git log -1 --format=%cI)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
-.PHONY: helper build test test-integration test-escape lint generate verify-generated check clean
+.PHONY: helper envd build test test-integration test-escape lint generate verify-generated check clean
 build: export CGO_ENABLED = 0
 build: helper
 	go build -ldflags "$(LDFLAGS)" -o bin/arcana ./cmd/arcana
 
 helper:
 	go run ./scripts/buildhelper --bin
+
+# The in-sandbox daemon (T4.1). Not embedded in arcana yet; the Firecracker driver will install it.
+envd: export CGO_ENABLED = 0
+envd:
+	go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/envd ./cmd/envd
 
 test:
 	go test -race ./...
@@ -28,7 +33,7 @@ generate:
 	go generate ./...
 
 verify-generated: generate
-	git diff --exit-code -- internal/api/gen internal/store/db internal/helper/assets
+	git diff --exit-code -- internal/api/gen internal/store/db internal/helper/assets internal/envd/envdpb
 
 check: verify-generated lint test
 

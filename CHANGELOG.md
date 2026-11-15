@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `envd`, an in-sandbox gRPC daemon (`cmd/envd`, `make envd`, ADR 0006) for the planned Firecracker driver: streaming exec with stdin, TTY and resize, cancellation and a `Signal` RPC, and file read/write/list/remove/mkdir, over a private Unix socket or host-only vsock. It runs every command under the existing `sbx-exec` controller, so process trees (including `setsid` descendants) are still reaped and completion is still proven. Nothing in Arcana uses it yet. The helper's code moved to `internal/sbxexec`; `sbx-exec` behaves the same, its embedded binaries were rebuilt, and its `write` now removes its temporary file on SIGTERM. New dependencies (owner-approved): gRPC, protobuf, `golang.org/x/sys`, and protocompile as a code-generation tool.
+
 ## [0.3.0] - 2026-11-12
 
 Workspace snapshots and fork, the MCP server, SDKs, the read-only dashboard, documentation site, reference agent, benchmarks and a development container. Not yet measured or verified: real-model fix-agent results (docs/agent-results.md), the density target on an 8 GB host, and a Codespaces creation.

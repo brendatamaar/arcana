@@ -1,4 +1,4 @@
-package main
+package sbxexec
 
 import (
 	"bufio"

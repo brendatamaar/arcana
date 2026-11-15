@@ -3,6 +3,7 @@ module github.com/brendatamaar/arcana
 go 1.27.3
 
 require (
+	github.com/bufbuild/protocompile v0.14.1
 	github.com/coder/websocket v1.8.15
 	github.com/containerd/errdefs v1.0.0
 	github.com/getkin/kin-openapi v0.142.0
@@ -11,11 +12,15 @@ require (
 	github.com/knadh/koanf/v2 v2.4.1
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.24.0
+	golang.org/x/sys v0.50.0
+	google.golang.org/grpc v1.84.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
 )
 
@@ -59,7 +64,6 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.8.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-sqlite3 v0.32.0 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
@@ -107,14 +111,12 @@ require (
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.79.0 // indirect
@@ -125,4 +127,6 @@ require (
 tool (
 	github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 	github.com/sqlc-dev/sqlc/cmd/sqlc
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc
+	google.golang.org/protobuf/cmd/protoc-gen-go
 )

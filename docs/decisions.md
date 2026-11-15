@@ -8,6 +8,7 @@ evidence behind the choice.
 - [0003: workspace backends and exec-based file transfer](decisions/0003-workspace-and-files.md)
 - [0004: internal networks and an outbound CONNECT proxy](decisions/0004-network-egress.md)
 - [0005: SDKs generated from the OpenAPI contract](decisions/0005-sdk-generation.md)
+- [0006: `envd`, the in-sandbox gRPC daemon](decisions/0006-envd.md)
 
 The measurements behind the early decisions are in the spike reports:
 [runsc exec](spikes/001-runsc-exec.md), [process termination](spikes/002-process-termination.md),
