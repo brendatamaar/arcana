@@ -71,10 +71,34 @@ Values are in `deploy/helm/arcana/values.yaml`. `config` is Arcana's own configu
 needs `config.runtime.docker.allow_insecure_runtime: true`; the chart refuses runc without it. By default the
 egress proxy uses the same image as the server.
 
+## Troubleshooting
+
+Arcana checks its prerequisites before it listens, so a bad value shows up as a crash loop with a clear
+message in `kubectl logs`:
+
+- `permission denied while trying to connect to the docker API`: `docker.socketGroup` is not the GID that owns
+  the socket on the node.
+- `creating database: open ...: permission denied`: the data directory on the node is not owned by
+  `user.uid`/`user.gid` (it must exist and be writable by that user; the chart does not chown it).
+- A pod stuck `Pending` or `CreateContainerError` on a `hostPath`: the node lacks the data directory or the
+  socket, or the namespace does not allow `hostPath` volumes (see Pod Security above).
+
 ## What was and was not verified
 
-The chart is checked by `scripts/check_helm.py` (`make helm-check`, and a CI job): `helm lint`, `kubeconform`
-on the rendered objects, the safety properties above asserted on the rendered manifests, and refusals for
-missing or unsafe values. The rendered configuration loads in Arcana and passes the first `arcana doctor`
-checks. **It has never been installed on a real cluster**: there was no Kubernetes cluster to use, so the
-pod's startup, the socket and data-directory permissions, `helm test` and the probes are unproven.
+`scripts/check_helm.py` (`make helm-check`, and a CI job) lints the chart, validates the rendered objects with
+`kubeconform` and asserts the safety properties on the rendered manifests; it also checks that bad or unsafe
+values are refused. The rendered configuration loads in Arcana.
+
+`scripts/kind-helm-e2e.sh` (`make helm-e2e`) installs the chart on a throwaway [kind](https://kind.sigs.k8s.io/)
+cluster and checks the real thing: the pod starts under its restricted security context and passes Arcana's
+startup checks (including a gVisor test container), a sandbox can be created and run commands through the
+Service, `helm test` passes, the pod is neither privileged nor writable, an upgrade replaces the pod while the
+sandbox, its workspace and the admin key survive, uninstalling leaves the sandbox running with its data in
+place, and a wrong socket group produces the error above. It was run from scratch on a 2 vCPU host (Kubernetes
+in a Docker container, runsc registered in the host Docker).
+
+That is a stand-in for a real node, not one: the kind node mounts the **host's** Docker socket, so the pod
+controls the host Docker Engine rather than one inside a real node, and the node is a container on the same
+host. Not tested: a multi-node cluster, other CNIs and a `NetworkPolicy`, an ingress with TLS, nodes where Docker
+Engine is installed by a real distribution (for example k3s with cri-dockerd), arm64, and the new CI job on
+GitHub.

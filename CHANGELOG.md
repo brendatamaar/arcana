@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `scripts/kind-helm-e2e.sh` (`make helm-e2e`), which installs the Helm chart on a throwaway kind cluster against the host Docker and checks startup, a working sandbox, `helm test`, the pod's security context, upgrade and uninstall survival and the wrong-socket-group error. docs/kubernetes.md gains a troubleshooting section and the verified scope.
+
 - Fix: every log line carried `"level":"[REDACTED]"` (the redaction of arbitrary objects also swallowed the built-in level), so logs could not be filtered by level. The level is visible again; other arbitrary objects are still redacted.
 
 - Fix: the exec history (`GET /v1/sandboxes/{id}/execs`, and so the dashboard) no longer lists the server's own workspace scans or file transfers. They are still recorded in the `execs` table (new `internal` column, migration 00006) but are not commands anyone ran, which matches the live events.

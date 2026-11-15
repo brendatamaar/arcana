@@ -51,6 +51,12 @@ clean:
 helm-check:
 	python3 scripts/check_helm.py
 
+# Installs the chart on a throwaway kind cluster against the host Docker (needs docker, kind, kubectl, helm
+# and `make build proxy-image templates` first).
+.PHONY: helm-e2e
+helm-e2e:
+	scripts/kind-helm-e2e.sh
+
 .PHONY: templates
 templates:
 	@for name in base python node go; do docker build -t arcana-$$name:local templates/$$name || exit $$?; done
