@@ -3,13 +3,18 @@ COMMIT ?= $(shell git rev-parse --short HEAD)
 BUILD_DATE ?= $(shell git log -1 --format=%cI)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 
-.PHONY: helper envd build test test-integration test-escape lint generate verify-generated check clean
+.PHONY: helper envd arcana-init build test test-integration test-escape lint generate verify-generated check clean
 build: export CGO_ENABLED = 0
 build: helper
 	go build -ldflags "$(LDFLAGS)" -o bin/arcana ./cmd/arcana
 
 helper:
 	go run ./scripts/buildhelper --bin
+
+# Guest init for Firecracker VMs (T4.2); scripts/build-rootfs.sh bakes it into a rootfs image.
+arcana-init: export CGO_ENABLED = 0
+arcana-init:
+	go build -trimpath -ldflags "-s -w" -o bin/arcana-init ./cmd/arcana-init
 
 # The in-sandbox daemon (T4.1). Not embedded in arcana yet; the Firecracker driver will install it.
 envd: export CGO_ENABLED = 0

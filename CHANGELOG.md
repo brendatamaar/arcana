@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add a Firecracker microVM driver (`internal/runtime/firecracker`, ADR 0007), the guest init `cmd/arcana-init` and `scripts/build-rootfs.sh`. Each sandbox is a VM with a read-only rootfs and its own workspace disk, reached through `envd` over vsock; the VMM runs under the jailer by default. It supports network mode `none` only, has no memory snapshots, is **not wired into `arcana serve`** and has **not been run on a real KVM host** (tests use a fake VMM with a real `envd`; the real-VM test skips without `/dev/kvm`).
+
 - Add `envd`, an in-sandbox gRPC daemon (`cmd/envd`, `make envd`, ADR 0006) for the planned Firecracker driver: streaming exec with stdin, TTY and resize, cancellation and a `Signal` RPC, and file read/write/list/remove/mkdir, over a private Unix socket or host-only vsock. It runs every command under the existing `sbx-exec` controller, so process trees (including `setsid` descendants) are still reaped and completion is still proven. Nothing in Arcana uses it yet. The helper's code moved to `internal/sbxexec`; `sbx-exec` behaves the same, its embedded binaries were rebuilt, and its `write` now removes its temporary file on SIGTERM. New dependencies (owner-approved): gRPC, protobuf, `golang.org/x/sys`, and protocompile as a code-generation tool.
 
 ## [0.3.0] - 2026-11-12
