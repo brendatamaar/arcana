@@ -63,8 +63,8 @@ own sandboxes; other owners' resources are hidden with 404 responses.
 host or VM. Keep the API on localhost; remote access needs a TLS-terminating
 reverse proxy and protected API keys. `runc` requires an explicit insecure-runtime
 opt-in and relies on the shared host kernel. It is not a strong isolation boundary
-for hostile code. The dashboard is read-only: browser sessions use a cookie that can only
-read (GET/HEAD) and sign out, never create, execute or delete, and the page is served with a
+for hostile code. The dashboard's browser sessions use a cookie that reaches only its own routes (never exec
+or files), and every write needs a CSRF token and a matching Origin; the page is served with a
 strict Content-Security-Policy; sandbox output is rendered as inert text and kept only in memory.
 See the [threat model](docs/PRD.md#12-security-and-threat-model)
 and [escape suite](docs/escape-v1.md).
@@ -237,7 +237,7 @@ curl --fail-with-body "$ARCANA_URL/v1/sandboxes/$sandbox_id/exec" \
   --data '{"cmd":["/bin/echo","hello"],"timeout_seconds":10}'
 ```
 
-The read-only web dashboard (overview, sandboxes, live command output) is served at `/ui` in release
+The web dashboard (overview, sandboxes, live command output, snapshots, and key and audit pages for admins) is served at `/ui` in release
 binaries; see [docs/dashboard.md](docs/dashboard.md).
 
 Measured performance against the PRD targets is in [docs/benchmarks.md](docs/benchmarks.md).
@@ -274,7 +274,7 @@ Environment overrides use `ARCANA_` and `__`, for example
   `open` network mode does not exist.
 - Snapshots capture the workspace only, not running processes, the container or
   environment values, and a workspace that changes while it is archived can make
-  the snapshot fail. The dashboard is read-only until a later release.
+  the snapshot fail.
 
 ## Development and validation
 

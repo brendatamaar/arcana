@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
+import { useSession } from "../api/hooks";
 import { useLiveEvents, type EventSourceFactory } from "../api/live";
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -12,11 +13,12 @@ export function Layout({ eventSourceFactory }: { eventSourceFactory?: EventSourc
   const client = useQueryClient();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const session = useSession();
 
   const logout = async () => {
     setBusy(true);
     try {
-      // The cookie is HttpOnly: only the server can clear it. This is the dashboard's one other write.
+      // The cookie is HttpOnly: only the server can clear it.
       await api.DELETE("/v1/sessions/current");
     } finally {
       client.clear();
@@ -44,6 +46,19 @@ export function Layout({ eventSourceFactory }: { eventSourceFactory?: EventSourc
               <NavLink to="/sandboxes" className={link}>
                 Sandboxes
               </NavLink>
+              <NavLink to="/snapshots" className={link}>
+                Snapshots
+              </NavLink>
+              {session.data?.admin ? (
+                <>
+                  <NavLink to="/keys" className={link}>
+                    Keys
+                  </NavLink>
+                  <NavLink to="/audit" className={link}>
+                    Audit
+                  </NavLink>
+                </>
+              ) : null}
             </nav>
           </div>
           <button

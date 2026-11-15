@@ -109,8 +109,35 @@ test("log in, watch a sandbox appear and an exec's output arrive live", async ({
     );
     await expect(page.getByRole("heading", { name: "State history" })).toBeVisible();
 
-    // The dashboard is read-only: the only writes are login and logout.
-    await expect(page.getByRole("button", { name: /create|destroy|delete|run/i })).toHaveCount(0);
+    // The dashboard's writes are real, but a session cookie alone cannot make them (T4.4): the
+    // browser holds the cookie and the page holds the CSRF token, and exec stays with API keys.
+    const forged = await page.evaluate(async (id) => {
+      const attempt = async (path: string, init: RequestInit) =>
+        (await fetch(path, { credentials: "same-origin", ...init })).status;
+      const json = { "Content-Type": "application/json" };
+      const session = (await (await fetch("/v1/sessions/current")).json()) as {
+        csrf_token: string;
+      };
+      return {
+        noToken: await attempt("/v1/sandboxes", {
+          method: "POST",
+          headers: json,
+          body: JSON.stringify({ template: "base" }),
+        }),
+        wrongToken: await attempt("/v1/sandboxes", {
+          method: "POST",
+          headers: { ...json, "X-CSRF-Token": "not-the-token" },
+          body: JSON.stringify({ template: "base" }),
+        }),
+        exec: await attempt(`/v1/sandboxes/${id}/exec`, {
+          method: "POST",
+          headers: { ...json, "X-CSRF-Token": session.csrf_token },
+          body: JSON.stringify({ cmd: ["id"] }),
+        }),
+        files: await attempt(`/v1/sandboxes/${id}/files?path=/workspace/x`, { method: "GET" }),
+      };
+    }, sandbox.id);
+    expect(forged).toEqual({ noToken: 403, wrongToken: 403, exec: 403, files: 403 });
   } finally {
     await request.delete(`/v1/sandboxes/${sandbox.id}`, { headers: auth });
   }
@@ -125,6 +152,119 @@ test("log in, watch a sandbox appear and an exec's output arrive live", async ({
   await page.goto("/ui/sandboxes");
   await expect(page.getByLabel("API key")).toBeVisible();
 
+  await watch.assertClean();
+});
+
+test("create, keep alive, snapshot and destroy from the dashboard, with the CSRF token on every write", async ({
+  page,
+}) => {
+  const watch = await watchViolations(page);
+  const writes: { method: string; path: string; csrf: string | null }[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "GET" && path.startsWith("/v1/"))
+      writes.push({
+        method: request.method(),
+        path,
+        csrf: request.headers()["x-csrf-token"] ?? null,
+      });
+  });
+
+  await page.goto("/ui/");
+  await page.getByLabel("API key").fill(key);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Sandboxes" }).click();
+  await page.getByRole("button", { name: "Create sandbox" }).click();
+  await page.getByLabel(/Time to live/).fill("10");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /^sbx_/ })).toBeVisible();
+  const id = (await page.getByRole("heading", { name: /^sbx_/ }).textContent()) ?? "";
+
+  try {
+    await page.getByRole("button", { name: "Keep alive" }).click();
+    await expect(page.getByText("Idle timer reset.")).toBeVisible();
+    await page.getByRole("button", { name: "Snapshot workspace" }).click();
+    await expect(page.getByText(/Snapshot saved\./)).toBeVisible();
+    await page.getByRole("link", { name: "Snapshots" }).first().click();
+    await expect(page.getByRole("heading", { name: "Snapshots" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Snapshots" })).toContainText(id);
+    await page.getByRole("button", { name: "Delete" }).first().click();
+    await page.getByRole("button", { name: "Delete snapshot" }).click();
+    await expect(page.getByText("No snapshots.")).toBeVisible();
+
+    await page.goto(`/ui/sandboxes/${id}`);
+    await page.getByRole("button", { name: "Destroy" }).click();
+    await page.getByRole("button", { name: "Destroy sandbox" }).click();
+    await expect(page.getByRole("heading", { name: "Sandboxes" })).toBeVisible();
+  } finally {
+    await page.request.delete(`/v1/sandboxes/${id}`, { headers: auth });
+  }
+
+  // Every write the page made carried the token; none of them was a command or a file write.
+  const dashboardWrites = writes.filter((w) => !w.path.endsWith("/v1/sessions"));
+  expect(dashboardWrites.length).toBeGreaterThanOrEqual(5);
+  for (const write of dashboardWrites) {
+    expect(write.csrf, `${write.method} ${write.path}`).toBeTruthy();
+    expect(write.path).not.toMatch(/\/(exec|files)/);
+  }
+  // This session's key is an ordinary or admin key; the admin-only pages follow the key's role.
+  await watch.assertClean();
+});
+
+test("an admin creates and revokes a key with the admin key re-entered, and sees it in the audit log", async ({
+  page,
+}) => {
+  const watch = await watchViolations(page);
+  await page.goto("/ui/");
+  await page.getByLabel("API key").fill(key);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Keys" }).click();
+  const form = page.getByRole("form", { name: "Create API key" });
+  await form.getByLabel("Name").fill("e2e-dashboard-key");
+  // Without the admin key typed again the server refuses, and the page says so.
+  await form.getByLabel("Your admin API key").fill("arc_live_not-the-admin-key");
+  await form.getByRole("button", { name: "Create key" }).click();
+  await expect(page.getByRole("alert")).toContainText("re-enter your admin API key");
+  await form.getByLabel("Your admin API key").fill(key);
+  await form.getByRole("button", { name: "Create key" }).click();
+  const secret = page.getByRole("region", { name: "New API key" });
+  await expect(secret).toContainText("shown only once");
+  const minted = (await secret.locator("code").textContent()) ?? "";
+  expect(minted).toMatch(/^arc_live_/);
+  // The secret and the admin key stay out of the browser's storage and the form.
+  const stored = await page.evaluate(() => {
+    const dump = (s: Storage) =>
+      Object.keys(s)
+        .map((k) => `${k}=${s.getItem(k) ?? ""}`)
+        .join(";");
+    return dump(localStorage) + dump(sessionStorage) + document.cookie;
+  });
+  expect(stored).not.toContain(minted);
+  expect(stored).not.toContain(key);
+  await secret.getByRole("button", { name: "I have saved it" }).click();
+  await expect(secret).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText(minted);
+
+  const row = page.getByRole("row", { name: /e2e-dashboard-key/ });
+  await expect(row).toContainText("active");
+  await row.getByRole("button", { name: "Revoke" }).click();
+  await page.getByLabel("Your admin API key").last().fill(key);
+  await page.getByRole("button", { name: "Revoke key" }).click();
+  await expect(row).toContainText("revoked");
+  expect(
+    (
+      await page.request.get("/v1/sandboxes", { headers: { Authorization: `Bearer ${minted}` } })
+    ).status(),
+  ).toBe(401);
+
+  await page.getByRole("link", { name: "Audit" }).click();
+  await page.getByLabel("Action").fill("key.created");
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByRole("table", { name: /Audit events/ })).toContainText("key.created");
   await watch.assertClean();
 });
 

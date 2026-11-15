@@ -153,7 +153,7 @@ Do not create new top-level directories without recording why in the Decision lo
 9. **Secrets:** store only key hashes; compare in constant time; write key files with `0600`.
 10. **No `open` network mode** and no TLS interception in the proxy.
 11. **Escape tests are never weakened** to make them pass. If one fails, fix the implementation or mark the task blocked.
-12. **The dashboard stays read-only until T4.4.** A session cookie must never authorize a mutating request. Do not add write actions to the dashboard, or relax the cookie method restriction or `Origin` checks, without the CSRF design from T4.4.
+12. **Cookie sessions are narrow.** A session cookie reaches only the routes in `classifyRoute` (internal/auth), never exec, the exec stream, files or archives, and every write needs a matching `Origin` and the session's CSRF token; key management also needs the admin key re-entered (ADR 0008). Do not add a cookie-reachable route that runs code or moves files, accept a write without the token, or relax the Origin checks, without a new ADR and escape tests.
 13. **No HTML from untrusted data.** No `dangerouslySetInnerHTML`, `innerHTML`, `eval` or `new Function` in `web/`, and the CSP in PRD FR-WD-9 is never loosened.
 
 ## Testing

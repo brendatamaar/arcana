@@ -430,8 +430,11 @@ type SandboxList struct {
 // SandboxState defines model for SandboxState.
 type SandboxState string
 
-// Session A dashboard browser session. Its token is delivered only as an HttpOnly cookie.
+// Session A dashboard browser session. Its token is delivered only as an HttpOnly cookie. The CSRF token is the synchronizer token that cookie-authenticated writes must send in the X-CSRF-Token header; it is useless without the cookie.
 type Session struct {
+	// Admin Whether the session's key is an admin key, so the dashboard can show key management and the audit view.
+	Admin     bool      `json:"admin"`
+	CsrfToken string    `json:"csrf_token"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Id        string    `json:"id"`
 }
@@ -833,6 +836,9 @@ type ServerInterface interface {
 	// DeleteCurrentSession Log out of the dashboard
 	// (DELETE /v1/sessions/current)
 	DeleteCurrentSession(w http.ResponseWriter, r *http.Request)
+	// GetCurrentSession Describe the dashboard session, including its CSRF token
+	// (GET /v1/sessions/current)
+	GetCurrentSession(w http.ResponseWriter, r *http.Request)
 	// ListSnapshots List snapshots visible to the key
 	// (GET /v1/snapshots)
 	ListSnapshots(w http.ResponseWriter, r *http.Request, params ListSnapshotsParams)
@@ -1789,6 +1795,20 @@ func (siw *ServerInterfaceWrapper) DeleteCurrentSession(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// GetCurrentSession operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSnapshots operation middleware
 func (siw *ServerInterfaceWrapper) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 
@@ -2055,6 +2075,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/snapshots/{id}/fork", wrapper.ForkSnapshot)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/current", wrapper.GetCurrentSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/events", wrapper.StreamEvents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/overview", wrapper.GetOverview)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sandboxes/{id}/history", wrapper.GetSandboxHistory)

@@ -118,7 +118,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Describe the dashboard session, including its CSRF token
+         * @description Returns the session the cookie identifies, with the CSRF token the dashboard must send on writes. Only a cookie-authenticated request has a session; an API key request is rejected with 400 invalid_request.
+         */
+        get: operations["getCurrentSession"];
         put?: never;
         post?: never;
         /**
@@ -493,11 +497,14 @@ export interface components {
         StateHistory: {
             items: components["schemas"]["StateChange"][];
         };
-        /** @description A dashboard browser session. Its token is delivered only as an HttpOnly cookie. */
+        /** @description A dashboard browser session. Its token is delivered only as an HttpOnly cookie. The CSRF token is the synchronizer token that cookie-authenticated writes must send in the X-CSRF-Token header; it is useless without the cookie. */
         Session: {
             id: string;
             /** Format: date-time */
             expires_at: string;
+            csrf_token: string;
+            /** @description Whether the session's key is an admin key, so the dashboard can show key management and the audit view. */
+            admin: boolean;
         };
         /** @description Metadata of one exec. Output is never stored; see the exec output stream. */
         ExecRecord: {
@@ -942,6 +949,36 @@ export interface operations {
                 headers: {
                     /** @description arcana_session=<token> */
                     "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current session */
+            200: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

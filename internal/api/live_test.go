@@ -633,3 +633,181 @@ func TestUIMount_ServedOutsideAuthWhileTheAPIStaysProtected(t *testing.T) {
 		t.Fatalf("a disabled dashboard must not be served: %d", w.Code)
 	}
 }
+
+// session logs in and returns the cookie with the session as the API describes it.
+func (e *liveEnv) session(t *testing.T, key string) (*http.Cookie, gen.Session) {
+	t.Helper()
+	resp := e.do(t, "POST", "/v1/sessions", key, "", nil)
+	if resp.StatusCode != 201 {
+		t.Fatalf("login: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	var body gen.Session
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range resp.Cookies() {
+		if c.Name == auth.SessionCookie {
+			return &http.Cookie{Name: c.Name, Value: c.Value}, body // #nosec G124 -- request cookie in a test
+		}
+	}
+	t.Fatal("no session cookie")
+	return nil, body
+}
+
+func TestCurrentSession_ExposesTheCSRFTokenToTheCookieOnly(t *testing.T) {
+	env := newLiveEnv(t, true, nil)
+	cookie, created := env.session(t, env.owner)
+	adminCookie, adminCreated := env.session(t, env.admin)
+	if created.CsrfToken == "" || created.Admin || !adminCreated.Admin || created.CsrfToken == adminCreated.CsrfToken {
+		t.Fatalf("%+v %+v", created, adminCreated)
+	}
+	read := map[string]string{"Sec-Fetch-Site": "same-origin"}
+	resp := env.do(t, "GET", "/v1/sessions/current", "", "", read, cookie)
+	if resp.StatusCode != 200 || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("%d %s", resp.StatusCode, resp.Header.Get("Cache-Control"))
+	}
+	var current gen.Session
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &current); err != nil || current.Id != created.Id || current.CsrfToken != created.CsrfToken || current.Admin {
+		t.Fatalf("a reloaded page must get the same token: %+v %v", current, err)
+	}
+	if got := env.do(t, "GET", "/v1/sessions/current", "", "", nil, cookie); got.StatusCode != 403 {
+		t.Fatalf("cross-origin read of the token: %d", got.StatusCode)
+	}
+	for name, headers := range map[string]map[string]string{"foreign Origin": {"Origin": "https://evil.example"}, "cross-site": {"Sec-Fetch-Site": "cross-site"}} {
+		if got := env.do(t, "GET", "/v1/sessions/current", "", "", headers, cookie); got.StatusCode != 403 {
+			t.Errorf("%s read the CSRF token: %d", name, got.StatusCode)
+		}
+	}
+	// An API key has no session to describe.
+	if got := env.do(t, "GET", "/v1/sessions/current", env.owner, "", nil); got.StatusCode != 400 {
+		t.Fatalf("bearer: %d", got.StatusCode)
+	}
+	if got := env.do(t, "GET", "/v1/sessions/current", "", "", read); got.StatusCode != 401 {
+		t.Fatalf("no credentials: %d", got.StatusCode)
+	}
+	if got := env.do(t, "GET", "/v1/sessions/current", "", "", read, adminCookie); got.StatusCode != 200 {
+		t.Fatal(got.StatusCode)
+	}
+}
+
+func TestCookieWrites_NeedTheCSRFTokenAndStayOwnedByTheSessionsKey(t *testing.T) {
+	env := newLiveEnv(t, true, nil)
+	cookie, session := env.session(t, env.owner)
+	proofs := map[string]string{"Origin": env.server.URL, auth.CSRFHeader: session.CsrfToken}
+	// Without the token the same request is refused and nothing is created.
+	if got := env.do(t, "POST", "/v1/sandboxes", "", `{"template":"base"}`, map[string]string{"Origin": env.server.URL}, cookie); got.StatusCode != 403 {
+		t.Fatalf("no token: %d", got.StatusCode)
+	}
+	if got := env.do(t, "POST", "/v1/sandboxes", "", `{"template":"base"}`, map[string]string{"Origin": "https://evil.example", auth.CSRFHeader: session.CsrfToken}, cookie); got.StatusCode != 403 {
+		t.Fatalf("foreign Origin with a stolen token: %d", got.StatusCode)
+	}
+	resp := env.do(t, "POST", "/v1/sandboxes", "", `{"template":"base"}`, proofs, cookie)
+	if resp.StatusCode != 201 {
+		t.Fatalf("create with both proofs: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	var created gen.Sandbox
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &created); err != nil {
+		t.Fatal(err)
+	}
+	// The sandbox belongs to the session's key: another key gets a 404, an admin sees it.
+	if got := env.do(t, "GET", "/v1/sandboxes/"+created.Id, env.other, "", nil); got.StatusCode != 404 {
+		t.Fatalf("another key reached the sandbox: %d", got.StatusCode)
+	}
+	if got := env.do(t, "POST", "/v1/sandboxes/"+created.Id+"/keepalive", "", "", proofs, cookie); got.StatusCode != 200 {
+		t.Fatalf("keepalive: %d", got.StatusCode)
+	}
+	// The same cookie cannot touch another key's sandbox, even with both proofs.
+	foreign := env.createSandbox(t, env.other)
+	if got := env.do(t, "DELETE", "/v1/sandboxes/"+foreign, "", "", proofs, cookie); got.StatusCode != 404 {
+		t.Fatalf("destroying another key's sandbox: %d", got.StatusCode)
+	}
+	if got := env.do(t, "DELETE", "/v1/sandboxes/"+created.Id, "", "", map[string]string{"Origin": env.server.URL}, cookie); got.StatusCode != 403 {
+		t.Fatalf("destroy without the token: %d", got.StatusCode)
+	}
+	if got := env.do(t, "DELETE", "/v1/sandboxes/"+created.Id, "", "", proofs, cookie); got.StatusCode != 204 && got.StatusCode != 200 {
+		t.Fatalf("destroy: %d", got.StatusCode)
+	}
+	// Logging out ends the token's usefulness with the session.
+	if got := env.do(t, "DELETE", "/v1/sessions/current", "", "", map[string]string{"Origin": env.server.URL}, cookie); got.StatusCode != 204 {
+		t.Fatal(got.StatusCode)
+	}
+	if got := env.do(t, "POST", "/v1/sandboxes", "", `{"template":"base"}`, proofs, cookie); got.StatusCode != 401 {
+		t.Fatalf("a logged-out session can still write: %d", got.StatusCode)
+	}
+}
+
+func TestESC26_CookiesNeverReachExecFilesOrTheExecStream(t *testing.T) {
+	env := newLiveEnv(t, true, nil)
+	id := env.createSandbox(t, env.owner)
+	cookie, session := env.session(t, env.owner)
+	proofs := map[string]string{"Origin": env.server.URL, "Sec-Fetch-Site": "same-origin", auth.CSRFHeader: session.CsrfToken}
+	for _, call := range [][3]string{
+		{"POST", "/v1/sandboxes/" + id + "/exec", `{"cmd":["ls"]}`},
+		{"GET", "/v1/sandboxes/" + id + "/exec/stream", ""},
+		{"GET", "/v1/sandboxes/" + id + "/files?path=/workspace/a", ""},
+		{"GET", "/v1/sandboxes/" + id + "/files/list?path=/workspace", ""},
+		{"GET", "/v1/sandboxes/" + id + "/files/archive?path=/workspace", ""},
+		{"PUT", "/v1/sandboxes/" + id + "/files?path=/workspace/a", "x"},
+		{"PUT", "/v1/sandboxes/" + id + "/files/archive?path=/workspace", "x"},
+		{"DELETE", "/v1/sandboxes/" + id + "/files?path=/workspace/a", ""},
+	} {
+		if got := env.do(t, call[0], call[1], "", call[2], proofs, cookie); got.StatusCode != 403 {
+			t.Errorf("%s %s with a cookie and every proof: %d", call[0], call[1], got.StatusCode)
+		}
+	}
+	execs, _ := env.service.ListExecs(context.Background(), auth.Principal{ID: "x", Admin: true}, id, 10, "")
+	if len(execs) != 0 {
+		t.Fatalf("a refused request ran a command: %+v", execs)
+	}
+}
+
+func TestESC27_KeyManagementNeedsTheAdminKeyReEntered(t *testing.T) {
+	env := newLiveEnv(t, true, nil)
+	adminCookie, admin := env.session(t, env.admin)
+	ownerCookie, owner := env.session(t, env.owner)
+	proofs := func(csrf, reauth string) map[string]string {
+		h := map[string]string{"Origin": env.server.URL, auth.CSRFHeader: csrf}
+		if reauth != "" {
+			h[auth.ReauthHeader] = reauth
+		}
+		return h
+	}
+	// Without re-entering the admin key a hijacked admin session cannot mint a key.
+	if got := env.do(t, "POST", "/v1/keys", "", `{"name":"x"}`, proofs(admin.CsrfToken, ""), adminCookie); got.StatusCode != 403 {
+		t.Fatalf("no re-entry: %d", got.StatusCode)
+	}
+	if got := env.do(t, "POST", "/v1/keys", "", `{"name":"x"}`, proofs(admin.CsrfToken, env.owner), adminCookie); got.StatusCode != 403 {
+		t.Fatalf("re-entering a non-admin key: %d", got.StatusCode)
+	}
+	resp := env.do(t, "POST", "/v1/keys", "", `{"name":"made-in-the-dashboard"}`, proofs(admin.CsrfToken, env.admin), adminCookie)
+	if resp.StatusCode != 201 {
+		t.Fatalf("create key: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	var minted gen.CreatedKey
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &minted); err != nil || minted.Key.Id == "" || minted.Secret == "" {
+		t.Fatalf("%+v %v", minted, err)
+	}
+	if got := env.do(t, "DELETE", "/v1/keys/"+minted.Key.Id, "", "", proofs(admin.CsrfToken, ""), adminCookie); got.StatusCode != 403 {
+		t.Fatalf("revoke without re-entry: %d", got.StatusCode)
+	}
+	if got := env.do(t, "DELETE", "/v1/keys/"+minted.Key.Id, "", "", proofs(admin.CsrfToken, env.admin), adminCookie); got.StatusCode != 204 && got.StatusCode != 200 {
+		t.Fatalf("revoke: %d", got.StatusCode)
+	}
+	if got := env.do(t, "GET", "/v1/sandboxes", minted.Secret, "", nil); got.StatusCode != 401 {
+		t.Fatalf("a revoked key still works: %d", got.StatusCode)
+	}
+	// A non-admin session fails whatever it re-enters.
+	for _, reauth := range []string{env.owner, env.admin} {
+		if got := env.do(t, "POST", "/v1/keys", "", `{"name":"x"}`, proofs(owner.CsrfToken, reauth), ownerCookie); got.StatusCode != 403 {
+			t.Errorf("non-admin session re-entering %s...: %d", reauth[:9], got.StatusCode)
+		}
+	}
+	// The audit view is admin-only even though cookies may read it.
+	read := map[string]string{"Sec-Fetch-Site": "same-origin"}
+	if got := env.do(t, "GET", "/v1/audit", "", "", read, ownerCookie); got.StatusCode != 403 {
+		t.Fatalf("a non-admin cookie read the audit log: %d", got.StatusCode)
+	}
+	if got := env.do(t, "GET", "/v1/keys", "", "", read, ownerCookie); got.StatusCode != 403 {
+		t.Fatalf("a non-admin cookie listed keys: %d", got.StatusCode)
+	}
+}

@@ -1,8 +1,16 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router";
-import { useExecs, useHistory, useSandbox } from "../api/hooks";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import {
+  useCreateSnapshot,
+  useDestroySandbox,
+  useExecs,
+  useHistory,
+  useKeepalive,
+  useSandbox,
+} from "../api/hooks";
 import type { ExecRecord } from "../api/client";
 import type { EventSourceFactory } from "../api/live";
+import { ConfirmAction } from "../components/ConfirmAction";
 import { Countdown, useNow } from "../components/Countdown";
 import { LogViewer } from "../components/LogViewer";
 import { ErrorNotice, Loading } from "../components/Notice";
@@ -22,13 +30,82 @@ function execStatus(exec: ExecRecord): string {
     : `exit ${exec.exit_code}`;
 }
 
+/** Keep alive, snapshot and destroy. Each is a CSRF-protected write the owner's key could also make. */
+function Actions({ id, destroy }: { id: string; destroy: ReturnType<typeof useDestroySandbox> }) {
+  const keepalive = useKeepalive(id);
+  const snapshot = useCreateSnapshot(id);
+  const failure = keepalive.error ?? snapshot.error ?? destroy.error;
+  const buttonClass =
+    "rounded border border-slate-400 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-60 dark:hover:bg-slate-800";
+  return (
+    <section aria-labelledby="actions" className="space-y-3">
+      <h2 id="actions" className="text-lg font-semibold">
+        Actions
+      </h2>
+      <div className="flex flex-wrap items-start gap-3">
+        <button
+          type="button"
+          className={buttonClass}
+          disabled={keepalive.isPending}
+          onClick={() => keepalive.mutate()}
+        >
+          Keep alive
+        </button>
+        <button
+          type="button"
+          className={buttonClass}
+          disabled={snapshot.isPending}
+          onClick={() => snapshot.mutate()}
+        >
+          {snapshot.isPending ? "Snapshotting…" : "Snapshot workspace"}
+        </button>
+        <ConfirmAction
+          label="Destroy"
+          confirmLabel="Destroy sandbox"
+          question="Destroy this sandbox? Its workspace is deleted."
+          busy={destroy.isPending}
+          onConfirm={() => destroy.mutate()}
+        />
+      </div>
+      {keepalive.isSuccess ? (
+        <p role="status" className="text-sm">
+          Idle timer reset.
+        </p>
+      ) : null}
+      {snapshot.data ? (
+        <p role="status" className="text-sm">
+          Snapshot saved.{" "}
+          <Link to="/snapshots" className="text-blue-700 underline dark:text-blue-300">
+            View snapshots
+          </Link>
+        </p>
+      ) : null}
+      {failure ? <ErrorNotice error={failure} /> : null}
+    </section>
+  );
+}
+
 export function SandboxDetail({ eventSourceFactory }: { eventSourceFactory?: EventSourceFactory }) {
   const { id = "" } = useParams();
   const sandbox = useSandbox(id);
+  // Owned here, not by Actions: the live event stream flips the sandbox to "destroyed" and unmounts
+  // the actions before the request's own callback would run, so the page itself does the navigating.
+  const destroy = useDestroySandbox(id);
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (destroy.isSuccess) void navigate("/sandboxes");
+  }, [destroy.isSuccess, navigate]);
   const history = useHistory(id);
   const execs = useExecs(id);
   const now = useNow();
   const [selected, setSelected] = useState<string | null>(null);
+  // The exec first shown stays shown. Newer history rows (the server's own workspace scans are
+  // listed too) must not pull the viewer away from the command someone is watching.
+  const [first, setFirst] = useState<string | null>(null);
+  const newest = execs.data?.items[0]?.id ?? null;
+  useEffect(() => {
+    if (first === null && newest !== null) setFirst(newest);
+  }, [first, newest]);
 
   if (sandbox.isPending) return <Loading what="sandbox" />;
   if (sandbox.error) return <ErrorNotice error={sandbox.error} />;
@@ -36,7 +113,7 @@ export function SandboxDetail({ eventSourceFactory }: { eventSourceFactory?: Eve
   const live = sb.state === "running" || sb.state === "creating";
   const left = deadlines(sb, now);
   const items = execs.data?.items ?? [];
-  const activeExec = selected ?? items[0]?.id ?? null;
+  const activeExec = selected ?? first ?? items[0]?.id ?? null;
 
   return (
     <div className="space-y-8">
@@ -94,6 +171,8 @@ export function SandboxDetail({ eventSourceFactory }: { eventSourceFactory?: Eve
           <p className="mt-3 text-sm">Ended: {describeReason(sb.end_reason)}</p>
         ) : null}
       </section>
+
+      {live ? <Actions id={sb.id} destroy={destroy} /> : null}
 
       <section aria-labelledby="history">
         <h2 id="history" className="mb-2 text-lg font-semibold">

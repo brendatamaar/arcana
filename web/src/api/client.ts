@@ -7,6 +7,24 @@ export type SandboxState = components["schemas"]["SandboxState"];
 export type ExecRecord = components["schemas"]["ExecRecord"];
 export type Overview = components["schemas"]["Overview"];
 export type StateChange = components["schemas"]["StateChange"];
+export type Session = components["schemas"]["Session"];
+export type Snapshot = components["schemas"]["Snapshot"];
+export type Template = components["schemas"]["Template"];
+export type ApiKey = components["schemas"]["Key"];
+export type AuditEvent = components["schemas"]["AuditEvent"];
+
+/**
+ * Supplies the session's CSRF token for writes. The app wires this to the session query so the
+ * token lives only in memory (never in storage) and is refetched after a reload.
+ */
+let csrfProvider: () => Promise<string | undefined> = () => Promise.resolve(undefined);
+export function setCsrfProvider(provider: () => Promise<string | undefined>): void {
+  csrfProvider = provider;
+}
+
+/** Header names the server expects on cookie-authenticated writes (docs/decisions/0008). */
+export const CSRF_HEADER = "X-CSRF-Token";
+export const REAUTH_HEADER = "X-Arcana-Reauth";
 
 /** Called when a request that needed a session was refused, so the app can return to login. */
 let onUnauthorized: () => void = () => undefined;
@@ -36,6 +54,16 @@ export const api = createClient<paths>({
   fetch: (request) => globalThis.fetch(request),
 });
 api.use(guard);
+api.use({
+  async onRequest({ request }) {
+    if (request.method === "GET" || request.method === "HEAD") return undefined;
+    // Login authenticates with the API key and has no session yet.
+    if (new URL(request.url).pathname.endsWith("/v1/sessions")) return undefined;
+    const token = await csrfProvider();
+    if (token) request.headers.set(CSRF_HEADER, token);
+    return request;
+  },
+});
 
 /** Returns the data of an openapi-fetch result or throws the server's error. */
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {

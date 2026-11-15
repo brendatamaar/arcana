@@ -69,7 +69,19 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, sessionCookie(r, token, int(s.keys.SessionTTL().Seconds())))
 	w.Header().Set("Cache-Control", "no-store")
-	s.respond(w, r, http.StatusCreated, gen.Session{Id: session.ID, ExpiresAt: session.ExpiresAt})
+	s.respond(w, r, http.StatusCreated, gen.Session{Id: session.ID, ExpiresAt: session.ExpiresAt, CsrfToken: session.CSRFToken, Admin: p.Admin})
+}
+
+// GetCurrentSession describes the cookie's session, including the CSRF token its writes must send.
+func (s *Server) GetCurrentSession(w http.ResponseWriter, r *http.Request) {
+	session, viaCookie := auth.SessionFromContext(r.Context())
+	p, ok := auth.FromContext(r.Context())
+	if !ok || !viaCookie {
+		s.failure(w, r, apierr.NewInvalidRequest("this request has no dashboard session; authenticate with the session cookie"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.respond(w, r, http.StatusOK, gen.Session{Id: session.ID, ExpiresAt: session.ExpiresAt, CsrfToken: session.CSRFToken, Admin: p.Admin})
 }
 
 // DeleteCurrentSession ends the cookie's session and clears the cookie.

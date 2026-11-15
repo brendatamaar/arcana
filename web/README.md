@@ -1,6 +1,6 @@
 # Arcana dashboard
 
-The read-only web UI served at `/ui`. See [docs/dashboard.md](../docs/dashboard.md) for what it does and how
+The web UI served at `/ui`. See [docs/dashboard.md](../docs/dashboard.md) for what it does and how
 it is built. Requires Node 22 or newer and pnpm.
 
 ```sh

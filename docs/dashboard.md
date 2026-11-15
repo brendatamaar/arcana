@@ -1,6 +1,6 @@
 # Web dashboard
 
-Arcana serves a read-only dashboard at `/ui` on the API listener (for example
+Arcana serves a dashboard at `/ui` on the API listener (for example
 `http://127.0.0.1:7070/ui/`). Release binaries include it; a binary built with `go install` serves an
 explanatory page instead, because the dashboard is built with Node and embedded at release time. Set
 `ui.enabled: false` to turn it off.
@@ -17,11 +17,19 @@ Pages:
   terminations with reasons. Admin keys see the whole installation; other keys see their own sandboxes.
 - **Sandboxes**: a list filterable by state, template and label, updated live.
 - **Sandbox detail**: specification, time-to-live and idle countdowns, state history, command history and a
-  live log viewer that follows a running command's output and keeps colours.
+  live log viewer that follows a running command's output and keeps colours. Live sandboxes have **Keep
+  alive**, **Snapshot workspace** and **Destroy** (after a second click to confirm).
+- **Sandboxes** also has **Create sandbox** from a configured template.
+- **Snapshots**: list, fork into several sandboxes, delete.
+- **Keys** and **Audit** (admin keys only): create and revoke API keys, and browse the audit log with filters.
+  Creating or revoking a key asks for your admin key again, and a new key's secret is shown once and kept
+  nowhere.
 
-It is read-only by design: apart from login and logout it performs no writes, and a session cookie can never
-authorize one (see [events and sessions](events.md)). Destroying sandboxes, managing keys and the audit view
-are planned for a later release. Everything a sandbox prints, and every name or label, is shown as text.
+The dashboard can create, destroy and keep alive sandboxes, manage snapshots and manage keys, but it **cannot
+run commands or touch files**: those need an API key. Its writes are protected against cross-site request
+forgery with a per-session token plus `Origin` checks (see [events and sessions](events.md) and
+[ADR 0008](decisions/0008-dashboard-writes-and-csrf.md)). Everything a sandbox prints, and every name, label
+or audit detail, is shown as text.
 
 Behind a reverse proxy that changes the `Host` header, add the public origin to `ui.allowed_origins`.
 

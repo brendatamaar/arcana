@@ -32,6 +32,9 @@ type SessionPolicy struct {
 type Session struct {
 	ID        string
 	ExpiresAt time.Time
+	// CSRFToken is the session's synchronizer token. It authorizes nothing by itself: a cookie
+	// write also needs the cookie and a same-origin Origin.
+	CSRFToken string
 }
 
 type sessionContextKey struct{}
@@ -93,7 +96,7 @@ func (s *Service) CreateSession(ctx context.Context, p Principal) (string, Sessi
 		return "", Session{}, fmt.Errorf("creating session: %w", err)
 	}
 	s.audit.Record("session.created", p.ID, "", map[string]any{"session_id": id})
-	return token, Session{ID: id, ExpiresAt: expires}, nil
+	return token, Session{ID: id, ExpiresAt: expires, CSRFToken: csrfToken(hash[:])}, nil
 }
 
 // verifySession authenticates a cookie token against current state: expired sessions and sessions
@@ -119,7 +122,7 @@ func (s *Service) verifySession(ctx context.Context, token string) (Principal, S
 			return Principal{}, Session{}, fmt.Errorf("recording session use: %w", err)
 		}
 	}
-	return Principal{ID: row.KeyID, Admin: row.IsAdmin == 1}, Session{ID: row.ID, ExpiresAt: row.ExpiresAt}, nil
+	return Principal{ID: row.KeyID, Admin: row.IsAdmin == 1}, Session{ID: row.ID, ExpiresAt: row.ExpiresAt, CSRFToken: csrfToken(hash[:])}, nil
 }
 
 // EndSession deletes a session; it is idempotent.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Dashboard write actions (T4.4, ADR 0008).** The dashboard can now create sandboxes from a template, keep them alive, snapshot and destroy them, fork and delete snapshots, and, for admin keys, create and revoke API keys and browse the audit log. Cookie sessions now authorize writes only with a matching `Origin` and the session's CSRF token (`X-CSRF-Token`, returned by `POST /v1/sessions` and the new `GET /v1/sessions/current`, which also reports `admin`); key management also needs the admin key typed again (`X-Arcana-Reauth`). Escape tests ESC-25 to ESC-27 were added.
+- **Security fix:** a session cookie could reach the WebSocket exec stream and the file read endpoints from a same-origin request, because they are `GET`s. Cookies now reach only an allowlist of the dashboard's routes; exec, the exec stream, files and archives need an API key. Cross-site pages were never able to use this (`SameSite=Strict`, Origin checks).
+- Fix: the dashboard's log viewer jumped to a newer entry of the exec history (the server's own workspace scans are listed there) instead of staying on the command being watched.
+
 - Add a runtime comparison (docs/runtime-comparison.md): `arcana bench` on runc and runsc, twice each in opposite order on a loaded 2 vCPU host, with raw results under `docs/benchmarks/runtime-comparison/`, and the escape suite run on runc through the new comparison-only `ARCANA_ESCAPE_RUNTIME=runc` (default and CI unchanged). It passes on runc too, because the suite tests Arcana's hardening, not kernel exploits. No Firecracker numbers: no KVM host was available.
 
 - Add a Firecracker microVM driver (`internal/runtime/firecracker`, ADR 0007), the guest init `cmd/arcana-init` and `scripts/build-rootfs.sh`. Each sandbox is a VM with a read-only rootfs and its own workspace disk, reached through `envd` over vsock; the VMM runs under the jailer by default. It supports network mode `none` only, has no memory snapshots, is **not wired into `arcana serve`** and has **not been run on a real KVM host** (tests use a fake VMM with a real `envd`; the real-VM test skips without `/dev/kvm`).

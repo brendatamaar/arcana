@@ -172,14 +172,22 @@ components:
     Session:
       type: object
       additionalProperties: false
-      required: [id, expires_at]
-      description: A dashboard browser session. Its token is delivered only as an HttpOnly cookie.
+      required: [id, expires_at, csrf_token, admin]
+      description: >-
+        A dashboard browser session. Its token is delivered only as an HttpOnly cookie. The CSRF
+        token is the synchronizer token that cookie-authenticated writes must send in the
+        X-CSRF-Token header; it is useless without the cookie.
       properties:
         id:
           type: string
         expires_at:
           type: string
           format: date-time
+        csrf_token:
+          type: string
+        admin:
+          type: boolean
+          description: Whether the session's key is an admin key, so the dashboard can show key management and the audit view.
     ExecRecord:
       type: object
       additionalProperties: false
@@ -735,10 +743,14 @@ components:
       in: cookie
       name: arcana_session
       description: >-
-        Dashboard session cookie (HttpOnly, SameSite=Strict). It authorizes only GET and HEAD requests
-        and DELETE /v1/sessions/current, and only for requests that carry an Origin matching this
-        server or ui.allowed_origins (or, for GET, Sec-Fetch-Site: same-origin). Any other request
-        authenticated only by the cookie is rejected with 403 forbidden.
+        Dashboard session cookie (HttpOnly, SameSite=Strict). It reaches only the dashboard's own
+        endpoints, never exec, the exec stream, files or archives, which need an API key (403
+        forbidden). Every cookie request must carry an Origin matching this server or
+        ui.allowed_origins (reads may use Sec-Fetch-Site: same-origin instead). Writes (create,
+        destroy and keep alive sandboxes; create, fork and delete snapshots) also need the session's
+        CSRF token in the X-CSRF-Token header. Creating or revoking API keys additionally needs the
+        admin API key re-entered in the X-Arcana-Reauth header. A cookie write missing a proof is
+        rejected with 403 forbidden.
 info:
   title: Arcana API
   version: 0.1.0
@@ -1033,6 +1045,42 @@ paths:
         "503":
           $ref: '#/components/responses/Error'
   /v1/sessions/current:
+    get:
+      operationId: getCurrentSession
+      summary: Describe the dashboard session, including its CSRF token
+      description: >-
+        Returns the session the cookie identifies, with the CSRF token the dashboard must send on
+        writes. Only a cookie-authenticated request has a session; an API key request is rejected
+        with 400 invalid_request.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        "400":
+          $ref: '#/components/responses/Error'
+        "401":
+          $ref: '#/components/responses/Error'
+        "403":
+          $ref: '#/components/responses/Error'
+        "404":
+          $ref: '#/components/responses/Error'
+        "409":
+          $ref: '#/components/responses/Error'
+        "413":
+          $ref: '#/components/responses/Error'
+        "429":
+          $ref: '#/components/responses/Error'
+        "500":
+          $ref: '#/components/responses/Error'
+        "501":
+          $ref: '#/components/responses/Error'
+        "503":
+          $ref: '#/components/responses/Error'
     delete:
       operationId: deleteCurrentSession
       summary: Log out of the dashboard

@@ -4,6 +4,7 @@ package escape
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -122,28 +123,40 @@ func TestEscapeV3_DashboardSessions(t *testing.T) {
 	}
 
 	// The victim logs in. The attacker page can make the browser attach this cookie to requests, so
-	// the attacks below send the cookie with the best headers an attacker could hope to forge.
-	loginReq, err := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/sessions", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loginReq.Header.Set("Authorization", "Bearer "+owner)
-	loginResp, err := http.DefaultClient.Do(loginReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = loginResp.Body.Close()
-	if loginResp.StatusCode != 201 {
-		t.Fatalf("login: %d", loginResp.StatusCode)
-	}
-	var cookie *http.Cookie
-	for _, ck := range loginResp.Cookies() {
-		if ck.Name == auth.SessionCookie {
-			cookie = &http.Cookie{Name: ck.Name, Value: ck.Value} // #nosec G124 -- request cookie in a test
+	// the attacks below send the cookie with the best headers an attacker could hope to forge. The
+	// attacker cannot read the CSRF token: only same-origin script can fetch it.
+	login := func(secret string) (*http.Cookie, string) {
+		loginReq, reqErr := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/sessions", nil)
+		if reqErr != nil {
+			t.Fatal(reqErr)
 		}
-	}
-	if cookie == nil {
+		loginReq.Header.Set("Authorization", "Bearer "+secret)
+		loginResp, doErr := http.DefaultClient.Do(loginReq)
+		if doErr != nil {
+			t.Fatal(doErr)
+		}
+		defer func() { _ = loginResp.Body.Close() }()
+		if loginResp.StatusCode != 201 {
+			t.Fatalf("login: %d", loginResp.StatusCode)
+		}
+		var session struct {
+			CSRFToken string `json:"csrf_token"`
+		}
+		if decodeErr := json.NewDecoder(io.LimitReader(loginResp.Body, 1<<16)).Decode(&session); decodeErr != nil || session.CSRFToken == "" {
+			t.Fatalf("login response lacks a CSRF token: %v", decodeErr)
+		}
+		for _, ck := range loginResp.Cookies() {
+			if ck.Name == auth.SessionCookie {
+				return &http.Cookie{Name: ck.Name, Value: ck.Value}, session.CSRFToken // #nosec G124 -- request cookie in a test
+			}
+		}
 		t.Fatal("no session cookie issued")
+		return nil, ""
+	}
+	cookie, csrf := login(owner)
+	_, adminSecret, err := keys.Create(ctx, "dashboard-admin", true)
+	if err != nil {
+		t.Fatal(err)
 	}
 	sameOrigin := map[string]string{"Origin": server.URL, "Sec-Fetch-Site": "same-origin"}
 
@@ -208,6 +221,101 @@ func TestEscapeV3_DashboardSessions(t *testing.T) {
 			if got, _ := request(ctx, t, "GET", server.URL+path, "", map[string]string{"Sec-Fetch-Site": "same-origin"}, cookie); got != 200 {
 				t.Errorf("%s same-origin: %d", path, got)
 			}
+		}
+	})
+
+	t.Run("ESC25_cookie_writes_need_the_csrf_token", func(t *testing.T) {
+		otherCookie, otherCSRF := login(owner)
+		_ = otherCookie
+		keepalive := server.URL + "/v1/sandboxes/" + target.Id + "/keepalive"
+		for name, headers := range map[string]map[string]string{
+			"no token":                           {"Origin": server.URL},
+			"empty token":                        {"Origin": server.URL, auth.CSRFHeader: ""},
+			"guessed token":                      {"Origin": server.URL, auth.CSRFHeader: "not-the-token"},
+			"another session's token":            {"Origin": server.URL, auth.CSRFHeader: otherCSRF},
+			"the real token from a foreign page": {"Origin": "https://evil.example", auth.CSRFHeader: csrf},
+			"the real token, null origin":        {"Origin": "null", auth.CSRFHeader: csrf},
+			"the real token, no Origin":          {auth.CSRFHeader: csrf, "Sec-Fetch-Site": "same-origin"},
+			"the real token claiming same-site":  {"Sec-Fetch-Site": "same-site", auth.CSRFHeader: csrf},
+		} {
+			if got, resp := request(ctx, t, "POST", keepalive, "", headers, cookie); got != 403 {
+				t.Errorf("keepalive with %s: %d %s", name, got, resp)
+			}
+		}
+		// The token is read through the session endpoint, which a foreign page cannot reach.
+		if got, resp := request(ctx, t, "GET", server.URL+"/v1/sessions/current", "", map[string]string{"Origin": "https://evil.example"}, cookie); got != 403 || strings.Contains(resp, csrf) {
+			t.Errorf("a foreign page read the CSRF token: %d", got)
+		}
+		// Not vacuous: the page's own request, with both proofs, is admitted.
+		if got, resp := request(ctx, t, "POST", keepalive, "", map[string]string{"Origin": server.URL, auth.CSRFHeader: csrf}, cookie); got != 200 {
+			t.Errorf("keepalive with both proofs: %d %s", got, resp)
+		}
+	})
+
+	t.Run("ESC26_cookies_never_reach_exec_or_files", func(t *testing.T) {
+		before, err := c.ListExecs(ctx, target.Id, client.ListOptions{Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Even a page that holds the cookie, the token and a matching Origin cannot run code or
+		// move files: those need an API key. The exec stream is a GET, so it is listed explicitly.
+		proofs := map[string]string{"Origin": server.URL, "Sec-Fetch-Site": "same-origin", auth.CSRFHeader: csrf}
+		for _, attack := range []struct{ method, path, body string }{
+			{"POST", "/v1/sandboxes/" + target.Id + "/exec", `{"shell":"touch /workspace/pwned26"}`},
+			{"GET", "/v1/sandboxes/" + target.Id + "/exec/stream", ""},
+			{"GET", "/v1/sandboxes/" + target.Id + "/files?path=/workspace/pwned", ""},
+			{"GET", "/v1/sandboxes/" + target.Id + "/files/list?path=/workspace", ""},
+			{"GET", "/v1/sandboxes/" + target.Id + "/files/archive?path=/workspace", ""},
+			{"PUT", "/v1/sandboxes/" + target.Id + "/files?path=/workspace/pwned26", "x"},
+			{"PUT", "/v1/sandboxes/" + target.Id + "/files/archive?path=/workspace", "x"},
+			{"DELETE", "/v1/sandboxes/" + target.Id + "/files?path=/workspace&recursive=true", ""},
+		} {
+			if got, resp := request(ctx, t, attack.method, server.URL+attack.path, attack.body, proofs, cookie); got != 403 {
+				t.Errorf("%s %s with a cookie and every proof: %d %s", attack.method, attack.path, got, resp)
+			}
+		}
+		if after, execErr := c.ListExecs(ctx, target.Id, client.ListOptions{Limit: 100}); execErr != nil || len(after.Items) != len(before.Items) {
+			t.Fatalf("an attack ran a command: %d -> %d %v", len(before.Items), len(after.Items), execErr)
+		}
+		if _, readErr := c.ReadFile(ctx, target.Id, "/workspace/pwned26"); readErr == nil {
+			t.Fatal("a cookie-authenticated request wrote to the sandbox")
+		}
+	})
+
+	t.Run("ESC27_key_management_needs_the_admin_key_again", func(t *testing.T) {
+		adminCookie, adminCSRF := login(adminSecret)
+		proofs := func(reauth string) map[string]string {
+			h := map[string]string{"Origin": server.URL, auth.CSRFHeader: adminCSRF}
+			if reauth != "" {
+				h[auth.ReauthHeader] = reauth
+			}
+			return h
+		}
+		count := func() int {
+			list, listErr := keys.List(ctx, "", 200)
+			if listErr != nil {
+				t.Fatal(listErr)
+			}
+			return len(list)
+		}
+		before := count()
+		// A hijacked admin session (cookie, token, Origin) cannot mint a backdoor key without the
+		// admin key, nor with the wrong or another key.
+		for name, reauth := range map[string]string{"nothing": "", "a wrong key": "arc_live_" + strings.Repeat("z", 32), "a non-admin key": owner} {
+			if got, resp := request(ctx, t, "POST", server.URL+"/v1/keys", `{"name":"backdoor","is_admin":true}`, proofs(reauth), adminCookie); got != 403 {
+				t.Errorf("creating a key re-entering %s: %d %s", name, got, resp)
+			}
+		}
+		// A non-admin session fails even when it presents an admin key.
+		if got, _ := request(ctx, t, "POST", server.URL+"/v1/keys", `{"name":"backdoor"}`, map[string]string{"Origin": server.URL, auth.CSRFHeader: csrf, auth.ReauthHeader: adminSecret}, cookie); got != 403 {
+			t.Errorf("a non-admin session created a key: %d", got)
+		}
+		if count() != before {
+			t.Fatal("a refused request created a key")
+		}
+		// Not vacuous: with the admin key typed again, the page can create a key.
+		if got, resp := request(ctx, t, "POST", server.URL+"/v1/keys", `{"name":"legit"}`, proofs(adminSecret), adminCookie); got != 201 {
+			t.Errorf("creating a key with re-entry: %d %s", got, resp)
 		}
 	})
 

@@ -2,6 +2,7 @@ import { type SyntheticEvent, useId, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { sessionKey } from "../api/hooks";
 import { toApiError } from "../api/errors";
 
 export function Login() {
@@ -33,6 +34,8 @@ export function Login() {
         return;
       }
       client.clear();
+      // The response carries the session's CSRF token; keep it in memory only.
+      client.setQueryData(sessionKey, result.data);
       void navigate("/");
     } catch {
       setError("Could not reach the server.");

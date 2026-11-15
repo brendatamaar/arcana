@@ -1,14 +1,17 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { setUnauthorizedHandler } from "./api/client";
-import { isUnauthorized } from "./api/client";
+import { isUnauthorized, setCsrfProvider, setUnauthorizedHandler } from "./api/client";
+import { sessionQuery } from "./api/hooks";
 import type { EventSourceFactory } from "./api/live";
 import { Layout } from "./components/Layout";
+import { Audit } from "./pages/Audit";
+import { Keys } from "./pages/Keys";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { SandboxDetail } from "./pages/SandboxDetail";
 import { Sandboxes } from "./pages/Sandboxes";
+import { Snapshots } from "./pages/Snapshots";
 
 export function newQueryClient(): QueryClient {
   return new QueryClient({
@@ -30,11 +33,18 @@ export function newQueryClient(): QueryClient {
   });
 }
 
-/** Sends the user to the login page whenever the server refuses a request for lack of a session. */
+/**
+ * Sends the user to the login page whenever the server refuses a request for lack of a session, and
+ * tells the API client where to get the CSRF token for writes: the in-memory session query.
+ */
 function SessionGuard() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const location = useLocation();
+  useEffect(() => {
+    setCsrfProvider(async () => (await client.query(sessionQuery)).csrf_token);
+    return () => setCsrfProvider(() => Promise.resolve(undefined));
+  }, [client]);
   useEffect(() => {
     setUnauthorizedHandler(() => {
       client.clear();
@@ -54,6 +64,9 @@ export function AppRoutes({ eventSourceFactory }: { eventSourceFactory?: EventSo
         <Route element={<Layout {...(eventSourceFactory ? { eventSourceFactory } : {})} />}>
           <Route index element={<Overview />} />
           <Route path="sandboxes" element={<Sandboxes />} />
+          <Route path="snapshots" element={<Snapshots />} />
+          <Route path="keys" element={<Keys />} />
+          <Route path="audit" element={<Audit />} />
           <Route
             path="sandboxes/:id"
             element={<SandboxDetail {...(eventSourceFactory ? { eventSourceFactory } : {})} />}

@@ -72,16 +72,18 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
-// serveCookie authenticates a dashboard session cookie under FR-WD-5: safe methods and logout only,
-// and only for requests that provably originate from this server's own pages.
+// serveCookie authenticates a dashboard session cookie under FR-WD-5: only the dashboard's own
+// routes, only for requests that provably originate from this server's own pages, and, for writes,
+// only with the session's CSRF token (and, for key management, the admin key re-entered).
 func (s *Service) serveCookie(w http.ResponseWriter, r *http.Request, next http.Handler, cookies []*http.Cookie) {
 	// Several cookies with one name is cookie tossing or a bug, never a legitimate browser state.
 	if len(cookies) != 1 {
 		_ = apierr.Write(w, r, apierr.NewUnauthorized("valid session required"))
 		return
 	}
-	switch decideCookie(r.Method, r.URL.Path, r.Header.Get("Origin"), r.Header.Get("Sec-Fetch-Site"), r.Host, s.sessions.AllowedOrigins) {
-	case cookieMethodForbidden:
+	verdict, class := decideCookie(r.Method, r.URL.Path, r.Header.Get("Origin"), r.Header.Get("Sec-Fetch-Site"), r.Host, s.sessions.AllowedOrigins)
+	switch verdict {
+	case cookieRouteForbidden:
 		_ = apierr.Write(w, r, apierr.NewForbidden("session cookies cannot authorize this request; use an API key"))
 		return
 	case cookieOriginForbidden:
@@ -99,7 +101,31 @@ func (s *Service) serveCookie(w http.ResponseWriter, r *http.Request, next http.
 		}
 		return
 	}
+	if class == routeWrite || class == routeKeyAdmin {
+		if !csrfValid(r.Header.Get(CSRFHeader), session.CSRFToken) {
+			_ = apierr.Write(w, r, apierr.NewForbidden("missing or invalid CSRF token"))
+			return
+		}
+	}
+	if class == routeKeyAdmin && !s.reauthenticated(r, principal) {
+		_ = apierr.Write(w, r, apierr.NewForbidden("re-enter your admin API key to manage keys"))
+		return
+	}
+	if class == routeWrite || class == routeKeyAdmin {
+		s.audit.Record("session.write", principal.ID, "", map[string]any{"session_id": session.ID, "method": r.Method, "path": r.URL.Path})
+	}
 	ctx := context.WithValue(r.Context(), principalKey{}, principal)
 	ctx = context.WithValue(ctx, sessionContextKey{}, session)
 	next.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// reauthenticated reports whether the request re-entered the admin key that owns the session.
+// Re-entry stops a hijacked session from minting or revoking keys on its own.
+func (s *Service) reauthenticated(r *http.Request, principal Principal) bool {
+	raw := r.Header.Get(ReauthHeader)
+	if raw == "" || len(raw) > 64 || !principal.Admin {
+		return false
+	}
+	again, err := s.Verify(r.Context(), raw)
+	return err == nil && again.ID == principal.ID && again.Admin
 }

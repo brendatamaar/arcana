@@ -214,15 +214,16 @@ The v0.1 Go client accepts an injected HTTP client and contexts, exposes typed A
 
 ### 7.14 Web dashboard (WD)
 
-- **FR-WD-1 [v0.3]** A read-only web dashboard built with React and TypeScript, compiled to static files, embedded in the binary and served at `/ui` on the API listener. It can be disabled with `ui.enabled: false`.
+- **FR-WD-1 [v0.3]** A web dashboard built with React and TypeScript, compiled to static files, embedded in the binary and served at `/ui` on the API listener. It can be disabled with `ui.enabled: false`.
 - **FR-WD-2 [v0.3]** Pages:
   - **Login:** paste an API key; it is exchanged for a browser session (FR-WD-4) and never stored by the browser.
   - **Overview:** version, runtime, active sandboxes by template, warm pool fill per template, recent terminations with reasons.
   - **Sandboxes:** list filterable by state, template and label, updated live.
   - **Sandbox detail:** spec, state history, TTL and idle countdowns, exec history, and a live log viewer that tails the output of running execs.
-- **FR-WD-3 [v0.3]** Read-only by design: apart from login and logout, the dashboard performs no mutations. Destroying sandboxes, key management and the audit view belong to the stretch dashboard (PLAN T4.4).
+  - **From T4.4:** create a sandbox from a template, keep alive, snapshot and destroy from the detail page, a **Snapshots** page (list, fork, delete), and admin-only **Keys** (create, revoke, with the admin key re-entered) and **Audit** pages.
+- **FR-WD-3 [v0.3, extended in T4.4]** v0.3 shipped the dashboard read-only. From T4.4 it also creates, destroys and keeps alive sandboxes, creates, forks and deletes snapshots, manages API keys (admin sessions) and shows the audit log (admin sessions). It never runs commands or transfers files: those need an API key. Every write is protected as in FR-WD-5 (ADR 0008).
 - **FR-WD-4 [v0.3]** Browser sessions: `POST /v1/sessions` (authenticated with an API key) creates a session and sets its token as a cookie with `HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure` unless the request is plain HTTP to a loopback address. Only the SHA-256 hash of the token is stored. Sessions expire after `ui.session_ttl_seconds` and stop working as soon as the underlying key is revoked. `DELETE /v1/sessions/current` logs out.
-- **FR-WD-5 [v0.3]** Session cookies authenticate **only safe methods** (`GET`, `HEAD`) plus `DELETE /v1/sessions/current`. Any other request authenticated only by a cookie is rejected with `403 forbidden`. Cookie-authenticated requests must carry an `Origin` (or, for `GET`, `Sec-Fetch-Site`) matching the server's own origin or `ui.allowed_origins`.
+- **FR-WD-5 [v0.3, changed in T4.4]** Session cookies reach only the dashboard's own routes (an allowlist, `classifyRoute` in `internal/auth`): its read endpoints (`GET`/`HEAD`), `POST /v1/sandboxes`, `DELETE /v1/sandboxes/{id}`, `POST /v1/sandboxes/{id}/keepalive`, `POST /v1/sandboxes/{id}/snapshots`, `POST /v1/snapshots/{id}/fork`, `DELETE /v1/snapshots/{id}`, key management (`POST /v1/keys`, `DELETE /v1/keys/{id}`) and `DELETE /v1/sessions/current`. Every other request authenticated only by a cookie, including exec, the exec stream, files and archives, is rejected with `403 forbidden`. Cookie-authenticated requests must carry an `Origin` matching the server's own origin or `ui.allowed_origins` (reads may use `Sec-Fetch-Site: same-origin` instead). Writes also need the session's CSRF token in `X-CSRF-Token`, and key management also needs the admin API key re-entered in `X-Arcana-Reauth`, matching the session's own admin key. The token is `HMAC-SHA256(session token hash, "arcana-csrf-v1")`, returned by `POST /v1/sessions` and `GET /v1/sessions/current`. v0.3 allowed every `GET` with a same-origin cookie, which reached the exec stream and file reads; the allowlist closes that. See ADR 0008.
 - **FR-WD-6 [v0.3]** Event stream `GET /v1/events` (Server-Sent Events): sandbox created, state changed and destroyed (with reason), exec started and ended (metadata only), and pool level changes, filtered to what the caller may see. Events carry increasing IDs; the server keeps the last `ui.event_buffer` events so a reconnecting client resumes with `Last-Event-ID`. A client too slow to keep up is sent a `reset` event and disconnected, and must refetch state.
 - **FR-WD-7 [v0.3]** Exec output tail `GET /v1/sandboxes/{id}/execs/{exec_id}/output` (SSE): replays buffered output, then streams live output until the exec ends. Both sync and streaming execs feed a per-exec in-memory ring buffer (`limits.exec.tail_buffer_bytes`) that is dropped `limits.exec.tail_retention_seconds` after the exec ends, so output is still never persisted (FR-EX-8). Subscribers per exec are capped by `limits.exec.max_tail_subscribers`.
 Implementation notes (T3.6, see `docs/events.md`): a cookie request is refused unless `Origin` equals the request's own origin or a `ui.allowed_origins` entry, or (GET/HEAD without `Origin`) `Sec-Fetch-Site` is `same-origin`; an `Authorization` header always wins over the cookie; each key keeps at most 20 sessions. Events cover user execs only (not file transfers or watchdog scans), never carry output, arguments or owner identity, and pool events are admin-only. Output tails are fixed rings in memory, readable until `tail_retention_seconds` after the exec ends, then replaced by a single `end` event with `expired: true`; there are at most 512 tails and 256 event streams. An unknown exec returns `sandbox_not_found`. `exit_code` in events and tails is null when the real status could not be confirmed.
@@ -430,6 +431,7 @@ Base path `/v1`. JSON request and response bodies unless noted. The source of tr
 | DELETE | `/v1/snapshots/{id}` | v0.3 | Delete snapshot |
 | POST | `/v1/snapshots/{id}/fork` | v0.3 | Create N sandboxes from snapshot |
 | POST | `/v1/sessions` | v0.3 | Exchange an API key for a dashboard session cookie |
+| GET | `/v1/sessions/current` | v0.4 | Describe the dashboard session, including its CSRF token (cookie only) |
 | DELETE | `/v1/sessions/current` | v0.3 | Log out of the dashboard |
 | GET | `/v1/events` | v0.3 | Server-Sent Events stream of lifecycle, exec and pool events |
 | GET | `/v1/overview` | v0.3 | Overview data for the dashboard |
@@ -650,7 +652,7 @@ Host OS and kernel; other sandboxes; host network and services; cloud metadata e
 | Key theft from DB | Keys stored as SHA-256 hashes; admin key file `0600` |
 | Network eavesdropping on API | Localhost bind by default; docs require TLS reverse proxy for remote access |
 | Orphaned resources after crash | Labels plus startup reconciliation |
-| CSRF through the dashboard session | Cookies authorize safe methods only; `SameSite=Strict`; `Origin` checks |
+| CSRF through the dashboard session | Cookies reach an allowlist of dashboard routes only; writes need a matching `Origin` and the session's CSRF token (ADR 0008); `SameSite=Strict`; key management needs the admin key re-entered; exec, streams and files never accept a cookie |
 | Cross-site reading of event or output streams | `Origin` / `Sec-Fetch-Site` checks on cookie requests; `SameSite=Strict` |
 | XSS from sandbox output, file names or labels shown in the dashboard | Rendered as text by React; ANSI colours parsed into styled spans, never HTML; no `dangerouslySetInnerHTML`; strict CSP |
 | Session token theft | `HttpOnly` cookie; token stored hashed; short TTL; revoked with its key |
@@ -686,6 +688,9 @@ Located in `test/escape`, run with `make test-escape` and in CI. Each test asser
 | ESC-22 | Mutating request (`POST /v1/sandboxes`, exec) authenticated only by a session cookie | 403 | v0.3 |
 | ESC-23 | Cross-origin request to `/v1/events` and an exec output stream carrying a session cookie | Rejected | v0.3 |
 | ESC-24 | Exec output containing `<script>`, HTML and ANSI escape tricks shown in the log viewer | Rendered as inert text (frontend test) | v0.3 |
+| ESC-25 | Cookie write (create, keepalive, destroy, snapshot) without, or with a wrong or another session's, CSRF token, or with the real token from a foreign origin | 403; the same request with both proofs is admitted | v0.4 |
+| ESC-26 | Cookie carrying the token and a matching Origin calls exec, the exec stream, or a file or archive route | 403; no command ran, no file written | v0.4 |
+| ESC-27 | Cookie creates or revokes an API key without re-entering the admin key, with a wrong key, or from a non-admin session | 403; no key created | v0.4 |
 
 The v0.1 escape suite drives attacks through public REST/WebSocket endpoints under runsc and verifies Arcana, a peer sandbox and Docker host health after every attack. Its test-only image contains a root-owned setuid probe, but all sandbox execution retains UID 1000 and production hardening. PID containment is proven by the test container's read-only cgroup `pids.events` counter without OOM kills, rather than by errno alone (runsc may report ENOMEM on PID denial). CPU peer latency is measured only after the spin probe signals it has started. ESC-03 verifies the 0.25 CPU controller configuration, increasing throttling counters and the unchanged 1500 ms CPU ceiling using host cgroup usage; guest getrusage remains diagnostic because its runtime accounting differs. Standalone security runs explicitly skip when runsc is unavailable; CI sets `ARCANA_REQUIRE_RUNSC=1` and fails instead. These kernel-counter reads never open workspace/volume files on the host. `ARCANA_ESCAPE_RUNTIME=runc` runs the same suite on runc for the comparison in `docs/runtime-comparison.md`; it logs a comparison banner, security CI (`ARCANA_REQUIRE_RUNSC=1`) refuses it, and a pass proves nothing about isolation.
 
@@ -870,5 +875,5 @@ A Grafana dashboard JSON lives in `deploy/grafana/` and is provisioned by the Co
 | Egress proxy | The component that enforces the outbound allowlist |
 | envd | The in-sandbox gRPC daemon (stretch) that lets a host run commands and move files in a sandbox without Docker exec |
 | Reconciliation | Matching real Docker objects to database state at startup and removing orphans |
-| Dashboard | The read-only React web UI served at `/ui` |
+| Dashboard | The React web UI served at `/ui` (read-only in v0.3; sandbox, snapshot and key management from T4.4) |
 | Session | A browser login for the dashboard, created from an API key and carried in a cookie |

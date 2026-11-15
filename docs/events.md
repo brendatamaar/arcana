@@ -1,12 +1,13 @@
 # Dashboard sessions, event stream and output tails
 
-These endpoints exist for the read-only web dashboard, and any client can use them with an API key. The
+These endpoints exist for the web dashboard, and any client can use them with an API key. The
 contract is in [`api/openapi.yaml`](../api/openapi.yaml). Configuration is under `ui.*` and
 `limits.exec.tail_*` in the [configuration reference](configuration.md).
 
 ## Sessions
 
-`POST /v1/sessions` (authenticated with an API key in the `Authorization` header) returns `{id, expires_at}`
+`POST /v1/sessions` (authenticated with an API key in the `Authorization` header) returns
+`{id, expires_at, csrf_token, admin}`
 and sets the session token as a cookie: `arcana_session`, `HttpOnly`, `SameSite=Strict`, `Path=/`, `Secure`
 unless the request is plain HTTP to a loopback address (or `X-Forwarded-Proto: https` is present). The token
 is random, shown only in that cookie, and stored only as a SHA-256 hash. A session expires after
@@ -15,13 +16,21 @@ is random, shown only in that cookie, and stored only as a SHA-256 hash. A sessi
 
 Rules for a request authenticated **only** by the cookie:
 
-- Only `GET`, `HEAD` and `DELETE /v1/sessions/current` are allowed. Everything else is `403 forbidden`: a
-  session can never create or destroy a sandbox, run a command, write a file or manage keys. Use an API key.
+- Only the dashboard's own routes are reachable (an allowlist, see
+  [ADR 0008](decisions/0008-dashboard-writes-and-csrf.md)): its read endpoints, creating, destroying and
+  keeping alive sandboxes, creating, forking and deleting snapshots, key management, and logout. Everything
+  else is `403 forbidden`, including exec, the exec stream, and every file and archive route: a cookie can
+  never run a command or move a file. Use an API key.
 - It must prove it comes from this server's own pages. Either an `Origin` header equals the request's own
-  origin (its `Host`) or an entry of `ui.allowed_origins`, or, for `GET`/`HEAD` without `Origin`,
+  origin (its `Host`) or an entry of `ui.allowed_origins`, or, for reads without `Origin`,
   `Sec-Fetch-Site: same-origin`. A foreign, `null` or malformed `Origin` is refused even if
   `Sec-Fetch-Site` claims same-origin. Requests with neither header (such as `curl`) are refused: the cookie
-  exists for browsers. Logout requires an `Origin`.
+  exists for browsers. Writes and logout require a matching `Origin`.
+- **Writes also need the session's CSRF token** in the `X-CSRF-Token` header, which the page reads from
+  `GET /v1/sessions/current` (or from the login response). Without it, or with another session's token, the
+  request is `403`.
+- **Creating or revoking an API key also needs the admin key typed again**, sent in `X-Arcana-Reauth`. It must
+  be the admin key that owns the session.
 - Two cookies with the name `arcana_session` are refused.
 - An `Authorization` header always takes precedence: a bad bearer key never falls back to the cookie.
 

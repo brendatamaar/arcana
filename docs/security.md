@@ -33,11 +33,14 @@ described in [escape v1](escape-v1.md) and runs on every commit with gVisor.
 
 ## Dashboard sessions
 
-Browser sessions are cookie-based and deliberately weaker than API keys: a session cookie can only read
-(`GET`/`HEAD`) and log out, and only for requests that provably come from Arcana's own origin, so a malicious
-website cannot use a victim's cookie to change anything or read event and output streams. Sessions are
-`HttpOnly`, `SameSite=Strict`, stored hashed, expire after `ui.session_ttl_seconds` and die with their key.
-See [events and sessions](events.md). Escape tests ESC-22 and ESC-23 cover this on real sandboxes.
+Browser sessions are cookie-based and deliberately weaker than API keys. A session cookie reaches only the
+dashboard's own routes (it can manage sandboxes, snapshots and, for admins, keys, but never run a command or
+move a file), only for requests that provably come from Arcana's own origin, and every write also needs the
+session's CSRF token, so a malicious website cannot use a victim's cookie to change anything or read event
+and output streams. Creating or revoking a key needs the admin key typed again. Sessions are `HttpOnly`,
+`SameSite=Strict`, stored hashed, expire after `ui.session_ttl_seconds` and die with their key. See
+[events and sessions](events.md) and [ADR 0008](decisions/0008-dashboard-writes-and-csrf.md). Escape tests
+ESC-22, ESC-23 and ESC-25 to ESC-27 cover this on real sandboxes.
 
 ## Known limitations
 
