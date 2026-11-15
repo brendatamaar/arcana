@@ -6,6 +6,9 @@ import (
 	"io"
 	"sync"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/brendatamaar/arcana/internal/envd"
 	"github.com/brendatamaar/arcana/internal/envd/envdpb"
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -129,6 +132,11 @@ func (s *execSession) Wait(ctx context.Context) (runtime.ExitInfo, error) {
 	}
 	s.cancel()
 	if s.exitErr != nil {
+		// A stream torn down by the caller's own cancellation reports a gRPC Canceled; the caller asked
+		// for it and expects its context's error.
+		if ctx.Err() != nil && status.Code(s.exitErr) == codes.Canceled {
+			return runtime.ExitInfo{}, ctx.Err()
+		}
 		return runtime.ExitInfo{}, s.exitErr
 	}
 	return s.exit, nil
