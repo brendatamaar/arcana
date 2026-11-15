@@ -80,12 +80,32 @@ func TestMaintain_ContextOwnsLoopAndJoins(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { defer close(done); s.Maintain(ctx, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
-	timer := <-clock.timers
-	if timer.after != time.Second && timer.after != time.Duration(s.cfg.Workspace.CheckIntervalSeconds)*time.Second {
-		t.Fatal(timer.after)
+	// Several loops (reaper, watchdog, pool filler, proxy drain) share the fake clock, so the first
+	// timer is whichever loop started first. Read timers until the reaper's and the watchdog's have
+	// both appeared; other loops' timers (the pool filler uses short backoffs) are not the subject.
+	watchdog := time.Duration(s.cfg.Workspace.CheckIntervalSeconds) * time.Second
+	var sawReaper, sawWatchdog bool
+	deadline := time.After(5 * time.Second)
+	for !sawReaper || !sawWatchdog {
+		select {
+		case timer := <-clock.timers:
+			sawReaper = sawReaper || timer.after == time.Second
+			sawWatchdog = sawWatchdog || timer.after == watchdog
+		case <-deadline:
+			t.Fatalf("loops did not start: reaper=%t watchdog=%t", sawReaper, sawWatchdog)
+		}
 	}
 	cancel()
-	<-done
+	// A loop may still be registering a timer; keep draining so none blocks, and require the join.
+	for {
+		select {
+		case <-clock.timers:
+		case <-done:
+			return
+		case <-time.After(5 * time.Second):
+			t.Fatal("Maintain did not return after its context was cancelled")
+		}
+	}
 }
 
 func TestWatch_SupervisedScanPreservesIdleAndEnforcesQuota(t *testing.T) {
