@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fix: every log line carried `"level":"[REDACTED]"` (the redaction of arbitrary objects also swallowed the built-in level), so logs could not be filtered by level. The level is visible again; other arbitrary objects are still redacted.
+
 - Fix: the exec history (`GET /v1/sandboxes/{id}/execs`, and so the dashboard) no longer lists the server's own workspace scans or file transfers. They are still recorded in the `execs` table (new `internal` column, migration 00006) but are not commands anyone ran, which matches the live events.
 
 - Add a Helm chart (`deploy/helm/arcana`, `make helm-check`, docs/kubernetes.md) that runs Arcana as one Deployment pinned to one node and drives that node's Docker Engine. It is root-equivalent on the node, needs Docker Engine and gVisor on that node, mounts its data directory by `hostPath` at the same path, and has never been installed on a real cluster (it is linted, rendered, schema-validated and asserted on, not run).

@@ -46,3 +46,24 @@ func TestEnvKeys_DiscardsValues(t *testing.T) {
 		t.Fatalf("keys: %v", keys)
 	}
 }
+
+// The level is not a secret: operators filter on it. It is a slog.Level, which is an "any" value, so
+// the blanket redaction of arbitrary objects must not swallow it.
+func TestLogger_KeepsTheBuiltInLevelVisible(t *testing.T) {
+	for format, want := range map[string]string{"json": `"level":"WARN"`, "text": "level=WARN"} {
+		var out bytes.Buffer
+		logger, err := New(&out, format, "info")
+		if err != nil {
+			t.Fatal(err)
+		}
+		logger.Warn("careful", "request_id", "req_x")
+		logger.Error("failed", "object", struct{ Secret string }{"s3cret"})
+		text := out.String()
+		if !strings.Contains(text, want) || !strings.Contains(text, "ERROR") {
+			t.Fatalf("%s: the level was redacted: %s", format, text)
+		}
+		if strings.Contains(text, "s3cret") {
+			t.Fatalf("%s: an arbitrary object leaked: %s", format, text)
+		}
+	}
+}

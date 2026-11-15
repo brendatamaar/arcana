@@ -47,6 +47,10 @@ func New(out io.Writer, format, level string) (*slog.Logger, error) {
 		if a.Value.Kind() == slog.KindString {
 			a.Value = slog.StringValue(keys.ReplaceAllString(a.Value.String(), "[REDACTED]"))
 		}
+		// The built-in level attribute is a slog.Level, an "any" value, but it is not a secret.
+		if _, isLevel := a.Value.Any().(slog.Level); isLevel && a.Key == slog.LevelKey && len(groups) == 0 {
+			return a
+		}
 		// Arbitrary objects can contain secrets. Log only explicit scalar attributes.
 		if a.Value.Kind() == slog.KindAny {
 			a.Value = slog.StringValue("[REDACTED]")
