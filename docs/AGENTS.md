@@ -41,7 +41,7 @@ If these documents conflict, **stop**, record the conflict in `PLAN.md` → Open
 | `make build` | Build `sbx-exec` then `arcana` into `bin/` (`CGO_ENABLED=0`); embeds the dashboard only if `make web` ran |
 | `make test` | Unit tests with `-race` |
 | `make test-integration` | Tests with build tag `integration` (needs Docker) |
-| `make test-escape` | Escape suite with build tag `escape` (needs Docker; meaningful only with runsc) |
+| `make test-escape` | Escape suite with build tag `escape` (needs Docker; meaningful only with runsc; `ARCANA_ESCAPE_RUNTIME=runc` is a comparison mode that proves nothing) |
 | `make lint` | `golangci-lint run` |
 | `make generate` | Run `oapi-codegen` and `sqlc` |
 | `make verify-generated` | Fail if generated code is stale |

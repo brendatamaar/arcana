@@ -74,7 +74,7 @@ func TestEscapeV3_DashboardSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: "runsc", InstallID: database.InstallID, HelperPath: path})
+	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: escapeRuntime(), AllowInsecureRuntime: escapeRuntime() == "runc", InstallID: database.InstallID, HelperPath: path})
 	if err != nil {
 		t.Fatal(err)
 	}

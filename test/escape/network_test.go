@@ -100,7 +100,7 @@ func TestEscapeV2_NetworkPublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: "runsc", InstallID: db.InstallID, HelperPath: path, Network: &dockerruntime.NetworkConfig{SubnetPool: "10.202.0.0/16", SubnetPrefix: 28, ProxyImage: "arcana:local", ProxyDNS: []string{dnsIP}, OnDecision: func(d netpolicy.Decision) { recorder.Record("egress.decision", "", d.SandboxID, d) }}})
+	driver, err := dockerruntime.New(dockerruntime.Config{OCIRuntime: escapeRuntime(), AllowInsecureRuntime: escapeRuntime() == "runc", InstallID: db.InstallID, HelperPath: path, Network: &dockerruntime.NetworkConfig{SubnetPool: "10.202.0.0/16", SubnetPrefix: 28, ProxyImage: "arcana:local", ProxyDNS: []string{dnsIP}, OnDecision: func(d netpolicy.Decision) { recorder.Record("egress.decision", "", d.SandboxID, d) }}})
 	if err != nil {
 		t.Fatal(err)
 	}

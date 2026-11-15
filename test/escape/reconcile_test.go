@@ -28,7 +28,7 @@ func TestESC20_DaemonCrashReconcilesBeforeAdmission(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	requireRunsc(ctx, t)
-	oci := "runsc"
+	oci := escapeRuntime()
 	t.Log("restart runtime:", oci)
 	docker(ctx, t, "build", "-t", "arcana-base:local", "../../templates/base")
 	dir := t.TempDir()

@@ -1,0 +1,149 @@
+{
+  "started_at": "2026-11-15T11:02:17.481347788Z",
+  "duration_seconds": 159.206415799,
+  "server": "http://127.0.0.1:44185",
+  "runtime": "runc",
+  "template": "base",
+  "host_note": "2 vCPU shared VM, 3.7 GB RAM, Docker 29.8.1, kernel 6.8, runtime runc, base template, same-host client",
+  "client": "linux/amd64, go1.27.3, 2 CPUs",
+  "config": {
+    "Scenarios": [
+      "cold-create",
+      "pool-acquire",
+      "exec-overhead",
+      "density",
+      "snapshot"
+    ],
+    "Template": "base",
+    "Iterations": 20,
+    "ExecIterations": 100,
+    "DensityMax": 12,
+    "DensityMemoryMB": 256,
+    "SnapshotMiB": 10,
+    "ForkCounts": [
+      2,
+      4
+    ],
+    "RunID": "18e833028891b8e0"
+  },
+  "results": [
+    {
+      "metric": "cold_create",
+      "samples": 20,
+      "failures": 0,
+      "min_ms": 219.58,
+      "p50_ms": 243.55,
+      "p95_ms": 365.58,
+      "p99_ms": 372.69,
+      "max_ms": 372.69,
+      "mean_ms": 275.5,
+      "target": {
+        "percentile": "p50",
+        "limit_ms": 2000,
+        "source": "cold create p50 ≤ 2 s (image cached)"
+      },
+      "met": true
+    },
+    {
+      "metric": "pool_acquire",
+      "samples": 20,
+      "failures": 0,
+      "min_ms": 5.5,
+      "p50_ms": 7.61,
+      "p95_ms": 24.97,
+      "p99_ms": 78.86,
+      "max_ms": 78.86,
+      "mean_ms": 12.6,
+      "target": {
+        "percentile": "p50",
+        "limit_ms": 150,
+        "source": "pool acquire p50 ≤ 150 ms and p99 ≤ 500 ms"
+      },
+      "met": true
+    },
+    {
+      "metric": "exec_true",
+      "samples": 100,
+      "failures": 0,
+      "min_ms": 193.43,
+      "p50_ms": 245.7,
+      "p95_ms": 344.22,
+      "p99_ms": 423.9,
+      "max_ms": 433.04,
+      "mean_ms": 262.4,
+      "target": {
+        "percentile": "p50",
+        "limit_ms": 100,
+        "source": "exec overhead for `true` p50 ≤ 100 ms"
+      },
+      "met": false
+    },
+    {
+      "metric": "density",
+      "samples": 12,
+      "failures": 0,
+      "min_ms": 302.93,
+      "p50_ms": 369.18,
+      "p95_ms": 471.64,
+      "p99_ms": 471.64,
+      "max_ms": 471.64,
+      "mean_ms": 376.65,
+      "value": 12,
+      "capped": true,
+      "note": "12 idle sandboxes of 256 MB held at once; stopped: reached the --density-max cap of 12. Create latency is while filling.",
+      "target": {
+        "percentile": "count",
+        "min_count": 20,
+        "source": "≥ 20 idle 256 MB sandboxes per 8 GB host"
+      }
+    },
+    {
+      "metric": "snapshot_create",
+      "samples": 20,
+      "failures": 0,
+      "min_ms": 613.67,
+      "p50_ms": 880.55,
+      "p95_ms": 1011.05,
+      "p99_ms": 1122.36,
+      "max_ms": 1122.36,
+      "mean_ms": 891.2,
+      "note": "10 MiB of incompressible data in /workspace"
+    },
+    {
+      "metric": "snapshot_restore",
+      "samples": 20,
+      "failures": 0,
+      "min_ms": 565.14,
+      "p50_ms": 853.98,
+      "p95_ms": 1183.81,
+      "p99_ms": 1511.71,
+      "max_ms": 1511.71,
+      "mean_ms": 898.35,
+      "note": "10 MiB of incompressible data in /workspace"
+    },
+    {
+      "metric": "fork_2",
+      "samples": 5,
+      "failures": 0,
+      "min_ms": 1528.17,
+      "p50_ms": 1649.03,
+      "p95_ms": 1786.31,
+      "p99_ms": 1786.31,
+      "max_ms": 1786.31,
+      "mean_ms": 1661.66,
+      "note": "10 MiB of incompressible data in /workspace; time until all members are running"
+    },
+    {
+      "metric": "fork_4",
+      "samples": 5,
+      "failures": 0,
+      "min_ms": 1895.75,
+      "p50_ms": 2922.16,
+      "p95_ms": 3351.03,
+      "p99_ms": 3351.03,
+      "max_ms": 3351.03,
+      "mean_ms": 2831.99,
+      "note": "10 MiB of incompressible data in /workspace; time until all members are running"
+    }
+  ]
+}
