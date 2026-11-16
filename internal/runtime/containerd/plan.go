@@ -2,6 +2,7 @@ package containerd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"path"
@@ -49,6 +50,12 @@ type plan struct {
 	// Workspace is the host directory behind /workspace for the volume backend; empty for tmpfs. The driver
 	// creates it before the container and removes it after.
 	Workspace string
+	// Args is the container's command; empty means the sandbox's idle process.
+	Args []string
+	// Allow is the sandbox's egress allowlist; non-nil means allowlist networking.
+	Allow []string
+	// Allowlist marks a sandbox whose network namespace the driver builds (netplan.go).
+	Allowlist bool
 }
 
 func environment(values map[string]string) ([]string, error) {
@@ -80,7 +87,15 @@ func planContainer(cfg Config, spec runtime.Spec) (plan, error) {
 	if spec.Image == "" || len(spec.Image) > 1024 {
 		return plan{}, runtime.Invalid{Field: "image"}
 	}
-	if spec.NetworkMode != "" && spec.NetworkMode != "none" {
+	allowlist := false
+	switch spec.NetworkMode {
+	case "", "none":
+	case "allowlist":
+		if cfg.Network == nil {
+			return plan{}, runtime.Unsupported{Feature: "containerd allowlist networking (set runtime.containerd.allowlist)"}
+		}
+		allowlist = true
+	default:
 		return plan{}, runtime.Unsupported{Feature: "containerd network mode " + spec.NetworkMode}
 	}
 	workspace := ""
@@ -134,7 +149,18 @@ func planContainer(cfg Config, spec runtime.Spec) (plan, error) {
 	if spec.PoolTemplate != "" {
 		labels["arcana.pool"] = spec.PoolTemplate
 	}
+	if allowlist {
+		allow, marshalErr := json.Marshal(spec.NetworkAllow)
+		if marshalErr != nil || len(allow) > 65536 {
+			return plan{}, runtime.Invalid{Field: "network allow"}
+		}
+		// Kept on the container so a restarted Arcana can rebuild the proxy's policy.
+		labels["arcana.network"] = "allowlist"
+		labels["arcana.allow"] = string(allow)
+		env = withProxyEnvironment(env)
+	}
 	return plan{
+		Allowlist: allowlist, Allow: spec.NetworkAllow,
 		ID: containerID(spec.SandboxID), Image: spec.Image, Labels: labels, Env: env, Workdir: workdir, Resources: r, Workspace: workspace,
 		SpecOpts: hardening(cfg, containerID(spec.SandboxID), workdir, r, workspace),
 	}, nil

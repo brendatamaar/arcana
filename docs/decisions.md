@@ -12,6 +12,7 @@ evidence behind the choice.
 - [0007: the Firecracker driver](decisions/0007-firecracker-driver.md)
 - [0008: dashboard write actions and CSRF protection](decisions/0008-dashboard-writes-and-csrf.md)
 - [0009: the containerd driver](decisions/0009-containerd-driver.md)
+- [0010: allowlist networking for the containerd driver](decisions/0010-containerd-allowlist-networking.md)
 
 The measurements behind the early decisions are in the spike reports:
 [runsc exec](spikes/001-runsc-exec.md), [process termination](spikes/002-process-termination.md),

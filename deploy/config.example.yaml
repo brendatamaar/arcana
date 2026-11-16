@@ -12,14 +12,19 @@ runtime:
     host: unix:///var/run/docker.sock
     oci_runtime: runsc            # runsc | runc
     allow_insecure_runtime: false # must be true to use runc
-  # Used only when driver is containerd (network mode none only; workspace.backend: volume needs Arcana to
-  # run as root or UID 1000, tmpfs works for any user).
+  # Used only when driver is containerd. workspace.backend: volume needs Arcana to run as root or UID 1000
+  # (tmpfs works for any user). Network mode allowlist needs allowlist: true, which needs root, the CNI
+  # plugins bridge/host-local/static and the proxy image in the namespace.
   # containerd:
   #   address: /run/containerd/containerd.sock
   #   namespace: arcana
   #   oci_runtime: runsc
   #   allow_insecure_runtime: false
   #   fifo_dir: /run/containerd/fifo
+  #   allowlist: false
+  #   cni_bin_dir: /opt/cni/bin
+  #   egress_subnet: 172.29.0.0/20
+  #   state_dir: /run/arcana
   # Used only when driver is firecracker (needs /dev/kvm, network mode none).
   # firecracker:
   #   firecracker_binary: /usr/bin/firecracker

@@ -29,6 +29,12 @@ func New(cfg config.Config, o Options) (Driver, error) {
 			// Only a volume backend needs (and so checks for) the host directory and the privileges to own it.
 			c.WorkspaceDir = filepath.Join(cfg.DataDir, "containerd", "workspaces")
 		}
+		if k.Allowlist {
+			c.Network = &containerd.NetworkConfig{
+				ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, CNIBinDir: k.CNIBinDir, EgressSubnet: k.EgressSubnet,
+				StateDir: k.StateDir, OnDecision: o.OnDecision, OnDropped: o.OnDropped,
+			}
+		}
 		return containerd.New(c)
 	case "firecracker":
 		f := cfg.Runtime.Firecracker

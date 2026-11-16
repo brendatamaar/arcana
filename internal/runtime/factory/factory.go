@@ -3,6 +3,7 @@
 package factory
 
 import (
+	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/runtime"
 	"github.com/brendatamaar/arcana/internal/runtime/docker"
 )
@@ -19,4 +20,7 @@ type Options struct {
 	HelperPath string
 	// Docker customises the Docker driver (orphan and egress callbacks, network settings) before it is built.
 	Docker func(*docker.Config)
+	// OnDecision and OnDropped receive egress proxy decisions from drivers that run proxies (containerd).
+	OnDecision func(netpolicy.Decision)
+	OnDropped  func(uint64)
 }

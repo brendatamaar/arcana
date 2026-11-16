@@ -25,7 +25,7 @@ A test fails if a key in the config struct is missing from this page.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `runtime.driver` | `docker` | `docker`, `containerd` or `firecracker`. Settings of the drivers you do not select are not checked. The containerd and Firecracker drivers support network mode `none` only; see [drivers](#drivers). |
+| `runtime.driver` | `docker` | `docker`, `containerd` or `firecracker`. Settings of the drivers you do not select are not checked. Firecracker supports network mode `none` only, and containerd needs `runtime.containerd.allowlist` for anything else; see [drivers](#drivers). |
 | `runtime.docker.host` | `unix:///var/run/docker.sock` | Docker endpoint. Access is root-equivalent. |
 | `runtime.docker.oci_runtime` | `runsc` | `runsc` (gVisor) or `runc`. |
 | `runtime.docker.allow_insecure_runtime` | `false` | Must be `true` to select `runc`, which shares the host kernel. |
@@ -34,6 +34,10 @@ A test fails if a key in the config struct is missing from this page.
 | `runtime.containerd.oci_runtime` | `runsc` | `runsc` (shim `io.containerd.runsc.v1`) or `runc` (`io.containerd.runc.v2`). |
 | `runtime.containerd.allow_insecure_runtime` | `false` | Must be `true` to select `runc`. |
 | `runtime.containerd.fifo_dir` | `/run/containerd/fifo` | Directory for exec named pipes. Arcana and containerd's shim must both reach it; the default is root-only, so a non-root Arcana needs another path (created `0700`). |
+| `runtime.containerd.allowlist` | `false` | Turn on allowlist networking for containerd ([ADR 0010](decisions/0010-containerd-allowlist-networking.md)). Needs Arcana to run as root, the CNI plugins `bridge`, `host-local` and `static`, and `network.proxy_image` imported into the namespace. Without it only network mode `none` works. |
+| `runtime.containerd.cni_bin_dir` | `/opt/cni/bin` | Where the CNI plugins are (`/usr/lib/cni` on Debian and Ubuntu packages). Used only with `allowlist`. |
+| `runtime.containerd.egress_subnet` | `172.29.0.0/20` | The shared outbound bridge's subnet; each sandbox's proxy takes one address, so the size bounds concurrent allowlist sandboxes. Must not overlap the host's networks (`arcana doctor` checks). Used only with `allowlist`. |
+| `runtime.containerd.state_dir` | `/run/arcana` | Network namespaces for allowlist sandboxes. Used only with `allowlist`. |
 | `runtime.firecracker.firecracker_binary` | `/usr/bin/firecracker` | The Firecracker binary. |
 | `runtime.firecracker.jailer_binary` | `/usr/bin/jailer` | The jailer that confines each VMM. Required unless `allow_unjailed`. The jailer needs Arcana to run as root. |
 | `runtime.firecracker.allow_unjailed` | `false` | Run Firecracker without the jailer. Development only. |
@@ -48,8 +52,9 @@ A test fails if a key in the config struct is missing from this page.
 ### Drivers
 
 - **docker** is the full-featured driver: disk-backed or tmpfs workspaces and allowlist networking.
-- **containerd** ([ADR 0009](decisions/0009-containerd-driver.md)) talks to containerd directly. It needs
-  supports only network mode `none`, and template images must already be in its namespace
+- **containerd** ([ADR 0009](decisions/0009-containerd-driver.md)) talks to containerd directly. It
+  supports network mode `none`, and `allowlist` when `runtime.containerd.allowlist` is on (root, CNI plugins and the
+  proxy image needed; see [ADR 0010](decisions/0010-containerd-allowlist-networking.md)). Template images must already be in its namespace
   (`ctr -n arcana images import`). Arcana only needs access to the socket, not to Docker. Workspaces are tmpfs,
   or (the default `volume` backend) a host directory per sandbox under `data_dir/containerd/workspaces`, bind
   mounted at `/workspace`. The directory must belong to the sandbox user, so **volume workspaces need Arcana to

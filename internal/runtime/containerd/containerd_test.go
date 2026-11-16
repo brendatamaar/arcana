@@ -204,13 +204,17 @@ type fakeEngine struct {
 	deleted    []string
 	containers []containerInfo
 	failCreate error
-	execs      []runtime.ExecRequest
+	// failCreateID, when set, limits failCreate to that container.
+	failCreateID string
+	execs        []runtime.ExecRequest
+	// onExec, when set, supplies exec sessions (for example a fake proxy control socket).
+	onExec func(id string, r runtime.ExecRequest) (runtime.ExecSession, error)
 }
 
 func (f *fakeEngine) Create(_ context.Context, p plan) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.failCreate != nil {
+	if f.failCreate != nil && (f.failCreateID == "" || f.failCreateID == p.ID) {
 		return f.failCreate
 	}
 	f.created = append(f.created, p)
@@ -226,10 +230,14 @@ func (f *fakeEngine) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeEngine) Exec(_ context.Context, _ string, r runtime.ExecRequest) (runtime.ExecSession, error) {
+func (f *fakeEngine) Exec(_ context.Context, id string, r runtime.ExecRequest) (runtime.ExecSession, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	hook := f.onExec
 	f.execs = append(f.execs, r)
+	f.mu.Unlock()
+	if hook != nil {
+		return hook(id, r)
+	}
 	return fakeSession{}, nil
 }
 

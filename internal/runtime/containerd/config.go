@@ -34,6 +34,9 @@ type Config struct {
 	// WorkspaceDir holds one host directory per sandbox, bind-mounted at /workspace for the volume
 	// backend. Empty means only the tmpfs backend is available. The directory is created 0700.
 	WorkspaceDir string
+	// Network enables allowlist networking (needs root, CNI plugins and the proxy image); nil supports
+	// network mode none only.
+	Network *NetworkConfig
 }
 
 var namespacePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
@@ -50,6 +53,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.FIFODir == "" {
 		c.FIFODir = "/run/containerd/fifo"
+	}
+	if c.Network != nil {
+		c.Network.applyDefaults()
 	}
 }
 
@@ -83,6 +89,11 @@ func (c Config) Validate() error {
 	}
 	if c.WorkspaceDir != "" && (!filepath.IsAbs(c.WorkspaceDir) || filepath.Clean(c.WorkspaceDir) != c.WorkspaceDir) {
 		return runtime.Invalid{Field: "workspace_dir"}
+	}
+	if c.Network != nil {
+		if err := c.Network.Validate(); err != nil {
+			return err
+		}
 	}
 	if !filepath.IsAbs(c.HelperPath) {
 		return runtime.Invalid{Field: "helper_path"}

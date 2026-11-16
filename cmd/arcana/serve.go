@@ -81,9 +81,10 @@ func newServeCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		driver, err := factory.New(cfg, factory.Options{InstallID: database.InstallID, HelperPath: helperPath, Docker: func(c *docker.Config) {
+		onDecision := func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }
+		driver, err := factory.New(cfg, factory.Options{InstallID: database.InstallID, HelperPath: helperPath, OnDecision: onDecision, OnDropped: recorder.AddDropped, Docker: func(c *docker.Config) {
 			c.OnOrphan = telemetry.Orphan
-			c.Network = &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: func(event netpolicy.Decision) { recorder.Record("egress.decision", "", event.SandboxID, event) }, OnDropped: recorder.AddDropped}
+			c.Network = &docker.NetworkConfig{SubnetPool: cfg.Network.SubnetPool, SubnetPrefix: cfg.Network.SubnetPrefix, ProxyImage: cfg.Network.ProxyImage, ProxyDNS: cfg.Network.ProxyDNS, DataDir: cfg.DataDir, OnDecision: onDecision, OnDropped: recorder.AddDropped}
 		}})
 		if err != nil {
 			return err
@@ -160,7 +161,7 @@ func newServeCommand() *cobra.Command {
 		defer cancelShutdown()
 		var drainErr error
 		if drainer, ok := driver.(interface{ DrainDecisions(context.Context) error }); ok {
-			drainErr = drainer.DrainDecisions(shutdownCtx) // only the Docker driver runs egress proxies
+			drainErr = drainer.DrainDecisions(shutdownCtx) // only drivers with egress proxies (Docker, containerd with allowlist) implement this
 		}
 		return errors.Join(serveErr, drainErr, lifecycle.Shutdown(shutdownCtx))
 	}}

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/netip"
 	"strings"
 	"time"
@@ -19,7 +18,6 @@ import (
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/brendatamaar/arcana/internal/netpolicy"
 	"github.com/brendatamaar/arcana/internal/runtime"
@@ -155,34 +153,9 @@ func (d *Driver) startProxy(ctx context.Context, id string, subnet netip.Prefix,
 }
 
 func (d *Driver) control(ctx context.Context, state *networkState, method, path string, body []byte, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	session, err := d.Exec(ctx, sandboxName(state.id)+"-proxy", runtime.ExecRequest{Cmd: []string{"/arcana", "proxy-control"}})
-	if err != nil {
-		return err
-	}
-	var output bytes.Buffer
-	var group errgroup.Group
-	group.Go(func() error { _, err := io.Copy(&output, io.LimitReader(session.Stdout(), (1<<20)+1)); return err })
-	group.Go(func() error { _, err := io.Copy(io.Discard, session.Stderr()); return err })
-	data, _ := json.Marshal(struct {
-		Token, Method, Path string
-		Body                []byte
-	}{state.token, method, path, body})
-	_, writeErr := session.Stdin().Write(data)
-	closeErr := session.Stdin().Close()
-	result, waitErr := session.Wait(ctx)
-	drainErr := group.Wait()
-	if err = errors.Join(writeErr, closeErr, waitErr, drainErr); err != nil {
-		return err
-	}
-	if result.ExitCode != 0 || output.Len() > 1<<20 {
-		return errors.New("proxy control failed")
-	}
-	if out != nil {
-		return json.Unmarshal(output.Bytes(), out)
-	}
-	return nil
+	return netpolicy.Control(ctx, func(c context.Context, req runtime.ExecRequest) (runtime.ExecSession, error) {
+		return d.Exec(c, sandboxName(state.id)+"-proxy", req)
+	}, state.token, method, path, body, out)
 }
 
 // DrainDecisions transfers bounded proxy decision batches to the injected sink.

@@ -40,6 +40,21 @@ if command -v runsc >/dev/null; then
   [ ! -d "$gvisor_dir/gvisor-bin" ] || mounts+=(-v "$gvisor_dir/gvisor-bin:/usr/local/bin/gvisor-bin:ro")
   [ ! -f /etc/containerd/runsc.toml ] || mounts+=(-v /etc/containerd/runsc.toml:/etc/containerd/runsc.toml:ro)
 fi
+# CNI plugins for allowlist networking, mounted at /opt/cni/bin. CNI_PLUGINS_DIR names a directory that already
+# has them; otherwise the pinned release is downloaded once into a cache and its checksum verified.
+cni_version=v1.6.2
+cni_dir="${CNI_PLUGINS_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/arcana/cni-plugins-$cni_version}"
+if [ ! -x "$cni_dir/bridge" ]; then
+  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) fail "no CNI plugins for $(uname -m)" ;; esac
+  tarball="cni-plugins-linux-$arch-$cni_version.tgz"
+  url="https://github.com/containernetworking/plugins/releases/download/$cni_version/$tarball"
+  mkdir -p "$cni_dir.partial"
+  curl -fsSL -o "$cni_dir.partial/$tarball" "$url" && curl -fsSL -o "$cni_dir.partial/$tarball.sha256" "$url.sha256" \
+    || fail "downloading the CNI plugins ($url); set CNI_PLUGINS_DIR to a directory that has them"
+  (cd "$cni_dir.partial" && sha256sum -c "$tarball.sha256" >/dev/null) || fail "CNI plugin checksum mismatch"
+  tar -xzf "$cni_dir.partial/$tarball" -C "$cni_dir.partial" && rm -rf "$cni_dir" && mv "$cni_dir.partial" "$cni_dir"
+fi
+mounts+=(-v "$cni_dir:/opt/cni/bin:ro")
 # CONTAINERD_BIN_DIR: a directory with containerd and ctr binaries to use instead of the image's, for
 # testing against another containerd version (for example the one matching the client library).
 if [ -n "${CONTAINERD_BIN_DIR:-}" ]; then
@@ -59,4 +74,8 @@ for _ in $(seq 1 30); do [ -S "$dir/containerd.sock" ] && break; sleep 1; done
 
 ctr() { docker exec -i "$name" ctr -a "$dir/containerd.sock" -n arcana "$@"; }
 docker save arcana-base:local | ctr images import - >/dev/null
-
+# Extra images (for example arcana:local, the egress proxy) the caller wants in the namespace.
+for image in ${EXTRA_IMAGES:-}; do
+  docker image inspect "$image" >/dev/null 2>&1 || fail "missing image $image"
+  docker save "$image" | ctr images import - >/dev/null
+done

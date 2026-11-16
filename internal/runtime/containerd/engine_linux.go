@@ -67,7 +67,11 @@ func (e *containerdEngine) Create(ctx context.Context, p plan) error {
 	// The image's environment (PATH, package-manager locations) applies, then the sandbox's own.
 	// oci.WithImageConfig is not used: it resolves a named USER by mounting the rootfs in this
 	// process, which a non-root client cannot do. The user is the numeric 1000:1000 set below.
-	opts := []oci.SpecOpts{oci.WithEnv(imageSpec.Config.Env), oci.WithProcessArgs("/bin/sleep", "infinity"), oci.WithEnv(p.Env)}
+	args := p.Args
+	if len(args) == 0 {
+		args = []string{"/bin/sleep", "infinity"}
+	}
+	opts := []oci.SpecOpts{oci.WithEnv(imageSpec.Config.Env), oci.WithProcessArgs(args...), oci.WithEnv(p.Env)}
 	opts = append(opts, p.SpecOpts...)
 	container, err := e.client.NewContainer(ctx, p.ID,
 		containerdclient.WithImage(image),

@@ -15,8 +15,9 @@ them. The chart runs only the Arcana control plane as a pod.
   and restrict RBAC on the namespace.
 - **The node must run Docker Engine 24 or newer, with gVisor registered.** Most managed clusters use
   containerd or CRI-O and have no Docker Engine; this chart does not work there. Run `arcana doctor` on the
-  node. A containerd driver exists in the repository ([ADR 0009](decisions/0009-containerd-driver.md)) but is
-  not wired into the server yet, so it cannot be used from this chart.
+  node. A containerd driver exists ([ADR 0009](decisions/0009-containerd-driver.md)) and is selectable with
+  `runtime.driver: containerd`, but this chart does not mount a containerd socket, CNI plugins or the
+  privileges it needs, so it cannot be used from this chart yet.
 - **Pinned to one node, one replica.** Sandboxes live in that node's Docker Engine and the data directory is a
   path on that node. Two Arcanas on one database and one engine would fight over the same containers, so the
   Deployment is fixed at one replica with the `Recreate` strategy. There is no high availability: if the node

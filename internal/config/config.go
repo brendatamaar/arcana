@@ -65,6 +65,12 @@ type Containerd struct {
 	OCIRuntime           string `koanf:"oci_runtime"`
 	AllowInsecureRuntime bool   `koanf:"allow_insecure_runtime"`
 	FIFODir              string `koanf:"fifo_dir"`
+	// Allowlist turns on allowlist networking for this driver: per-sandbox CNI networks and an egress proxy
+	// container (ADR 0010). It needs Arcana to run as root, the CNI plugins and the proxy image.
+	Allowlist    bool   `koanf:"allowlist"`
+	CNIBinDir    string `koanf:"cni_bin_dir"`
+	EgressSubnet string `koanf:"egress_subnet"`
+	StateDir     string `koanf:"state_dir"`
 }
 
 // Firecracker configures the Firecracker microVM driver (ADR 0007).
@@ -105,9 +111,11 @@ func (r Runtime) OCI() (name string, insecure bool) {
 	}
 }
 
-// SupportsAllowlist reports whether the driver can enforce network allowlists (it needs the egress
-// proxy and per-sandbox Docker networks, so only the Docker driver can).
-func (r Runtime) SupportsAllowlist() bool { return r.Driver == "docker" }
+// SupportsAllowlist reports whether the driver can enforce network allowlists: Docker always, containerd when
+// its allowlist networking is switched on, Firecracker never.
+func (r Runtime) SupportsAllowlist() bool {
+	return r.Driver == "docker" || (r.Driver == "containerd" && r.Containerd.Allowlist)
+}
 
 // SupportsVolumeWorkspace reports whether the driver can back /workspace with a disk instead of memory.
 // Every driver can (containerd uses a host directory, see ADR 0009).
@@ -228,7 +236,7 @@ func Default() Config {
 		Runtime: Runtime{
 			Driver:      "docker",
 			Docker:      Docker{"unix:///var/run/docker.sock", "runsc", false},
-			Containerd:  Containerd{Address: "/run/containerd/containerd.sock", Namespace: "arcana", OCIRuntime: "runsc", FIFODir: "/run/containerd/fifo"},
+			Containerd:  Containerd{Address: "/run/containerd/containerd.sock", Namespace: "arcana", OCIRuntime: "runsc", FIFODir: "/run/containerd/fifo", CNIBinDir: "/opt/cni/bin", EgressSubnet: "172.29.0.0/20", StateDir: "/run/arcana"},
 			Firecracker: Firecracker{FirecrackerBinary: "/usr/bin/firecracker", JailerBinary: "/usr/bin/jailer", KernelImage: "/var/lib/arcana/firecracker/vmlinux", RootfsDir: "/var/lib/arcana/firecracker/rootfs", JailerUID: 10001, JailerGID: 10001, VsockPort: 1024, BootTimeoutSeconds: 30},
 		},
 		Limits:    Limits{20, 10, 30, 86400, Defaults{Resources{1, 1024, 2048, 256}, 1800, 600}, Resources{4, 8192, 20480, 4096}, Exec{120, 3600, 10485760, 8, 262144, 300, 10}, Files{52428800, 524288000, []string{"/workspace", "/tmp"}}},
@@ -511,6 +519,16 @@ func (c Config) validateRuntime(bad func(field, message string)) {
 		oci("runtime.containerd", c.Runtime.Containerd.OCIRuntime, c.Runtime.Containerd.AllowInsecureRuntime)
 		absolute("runtime.containerd.address", c.Runtime.Containerd.Address)
 		absolute("runtime.containerd.fifo_dir", c.Runtime.Containerd.FIFODir)
+		if k := c.Runtime.Containerd; k.Allowlist {
+			absolute("runtime.containerd.cni_bin_dir", k.CNIBinDir)
+			absolute("runtime.containerd.state_dir", k.StateDir)
+			if prefix, err := netip.ParsePrefix(k.EgressSubnet); err != nil || !prefix.Addr().Is4() || prefix.Bits() < 8 || prefix.Bits() > 28 || prefix.Masked() != prefix {
+				bad("runtime.containerd.egress_subnet", "must be an IPv4 network address in CIDR form from /8 to /28")
+			}
+			if len(c.Network.ProxyDNS) == 0 {
+				bad("network.proxy_dns", "must list at least one resolver for allowlist networking")
+			}
+		}
 		if c.Runtime.Containerd.Namespace == "" || len(c.Runtime.Containerd.Namespace) > 64 {
 			bad("runtime.containerd.namespace", "must be 1..64 characters")
 		}
@@ -540,11 +558,11 @@ func (c Config) validateRuntime(bad func(field, message string)) {
 	}
 	if !c.Runtime.SupportsAllowlist() {
 		if c.Network.DefaultMode == "allowlist" {
-			bad("network.default_mode", "allowlist needs the docker driver; use none")
+			bad("network.default_mode", "allowlist needs the docker driver, or containerd with runtime.containerd.allowlist; use none")
 		}
 		for _, template := range c.Templates {
 			if template.NetworkPreset != "" {
-				bad("templates", "template "+template.Name+" has a network_preset, which needs the docker driver")
+				bad("templates", "template "+template.Name+" has a network_preset, which needs the docker driver, or containerd with runtime.containerd.allowlist")
 			}
 		}
 	}

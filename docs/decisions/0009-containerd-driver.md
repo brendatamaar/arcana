@@ -35,8 +35,8 @@ containerd started inside a privileged container with its socket in a directory 
 
 ## What it does not do
 
-- **Network mode `none` only.** `allowlist` returns `runtime.Unsupported`: the per-sandbox networks and egress
-  proxy (ADR 0004) are built on Docker networks.
+- **Network mode `none` unless allowlist networking is switched on** (`runtime.containerd.allowlist`, ADR 0010;
+  it needs root, CNI plugins and the proxy image). Otherwise `allowlist` returns `runtime.Unsupported`.
 - **Volume workspaces need a privileged Arcana** (see "Volume workspaces" below); a non-root, non-1000
   Arcana must use `workspace.backend: tmpfs`.
 - **Template images** must already be in the containerd namespace; the driver does not pull.
@@ -122,7 +122,7 @@ Design comparison first, then measurements.
 | Root-equivalent access | The Docker socket | The containerd socket |
 | Isolation | Same runtimes (runsc by default); the engine applies a default seccomp profile to runc | Same runtimes; hardening comes only from the OCI spec this driver writes |
 | Workspace | Docker volume (default) or tmpfs | Host directory (default; Arcana must be root or UID 1000) or tmpfs |
-| Networking | `none` or allowlist with the egress proxy | `none` only |
+| Networking | `none` or allowlist with the egress proxy | `none`, or allowlist on CNI with the same proxy (ADR 0010; needs root) |
 | Images | Pulled and checked by the engine | Must already be in the containerd namespace |
 | Operational fit | Anywhere Docker runs | Hosts that run containerd without Docker |
 | Speed (runc, nested harness) | Baseline | About 2 to 3 times faster to create, exec and destroy |

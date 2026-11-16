@@ -44,6 +44,10 @@ type Driver struct {
 	gate   chan struct{} // serialises creation, like the Docker driver
 	mu     sync.Mutex
 	closed bool
+	// host and networks exist only with allowlist networking (network.go).
+	host      hostNet
+	networkMu sync.Mutex
+	networks  map[string]*proxyState
 }
 
 var _ runtime.Driver = (*Driver)(nil)
@@ -58,7 +62,11 @@ func New(cfg Config) (*Driver, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Driver{cfg: cfg, engine: e, gate: make(chan struct{}, 1)}, nil
+	d := &Driver{cfg: cfg, engine: e, gate: make(chan struct{}, 1)}
+	if cfg.Network != nil {
+		d.host = linuxHost{cfg: *cfg.Network}
+	}
+	return d, nil
 }
 
 // Name includes the runtime, like the Docker driver.
@@ -92,21 +100,41 @@ func (d *Driver) Create(ctx context.Context, spec runtime.Spec) (runtime.Instanc
 	if err = ctx.Err(); err != nil {
 		return runtime.Instance{}, err
 	}
+	// Resources are built cheapest-failure first and unwound in reverse if anything fails.
+	var cleanups []func(context.Context) error
+	unwind := func(cause error) (runtime.Instance, error) {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		errs := []error{cause}
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			// Stop at the first failure: nothing may be removed from under a container that might still run.
+			// PruneOrphans finishes the job at the next start.
+			if err := cleanups[i](cleanup); err != nil {
+				errs = append(errs, err)
+				break
+			}
+		}
+		return runtime.Instance{}, errors.Join(errs...)
+	}
 	if p.Workspace != "" {
 		if err = prepareWorkspace(d.cfg.WorkspaceDir, p.Workspace); err != nil {
 			return runtime.Instance{}, err
 		}
+		cleanups = append(cleanups, func(context.Context) error { return removeWorkspace(p.Workspace) })
+	}
+	if p.Allowlist {
+		var netns string
+		if netns, err = d.createNetwork(ctx, spec.SandboxID, p.Allow); err != nil {
+			return unwind(err)
+		}
+		cleanups = append(cleanups, func(c context.Context) error { return d.removeNetwork(c, spec.SandboxID) })
+		p.SpecOpts = append(p.SpecOpts, withNetns(netns))
 	}
 	if err = d.engine.Create(ctx, p); err != nil {
-		// A half-created container must not survive: remove it with a context that outlives
-		// the failed request, then its workspace.
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		deleteErr := d.engine.Delete(cleanup, p.ID)
-		if p.Workspace != "" && deleteErr == nil {
-			deleteErr = removeWorkspace(p.Workspace)
-		}
-		return runtime.Instance{}, errors.Join(fmt.Errorf("creating sandbox container: %w", err), deleteErr)
+		// A half-created container must not survive: remove it with a context that outlives the failed request,
+		// and only then what it used.
+		cleanups = append(cleanups, func(c context.Context) error { return d.engine.Delete(c, p.ID) })
+		return unwind(fmt.Errorf("creating sandbox container: %w", err))
 	}
 	return runtime.Instance{ID: p.ID, SandboxID: spec.SandboxID, Labels: maps.Clone(p.Labels)}, nil
 }
@@ -126,15 +154,22 @@ func (d *Driver) Destroy(ctx context.Context, id string) error {
 	if err := d.engine.Delete(ctx, id); err != nil {
 		return err
 	}
-	if d.cfg.WorkspaceDir != "" {
-		return removeWorkspace(d.cfg.workspacePath(sandbox))
+	var errs []error
+	if d.hasNetwork(sandbox) {
+		errs = append(errs, d.removeNetwork(ctx, sandbox))
 	}
-	return nil
+	if d.cfg.WorkspaceDir != "" {
+		errs = append(errs, removeWorkspace(d.cfg.workspacePath(sandbox)))
+	}
+	return errors.Join(errs...)
 }
 
 // PruneOrphans removes workspace directories no kept sandbox owns (a crash between creating the directory and
 // the container, or a destroy that died halfway). It runs before request admission, like the Docker driver's.
 func (d *Driver) PruneOrphans(ctx context.Context, keep map[string]bool) error {
+	if err := d.pruneNetworks(ctx, keep); err != nil {
+		return err
+	}
 	if d.cfg.WorkspaceDir == "" {
 		return nil
 	}
@@ -201,6 +236,13 @@ func (d *Driver) Check(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("containerd is unreachable at %s: %w", d.cfg.Address, err)
 	}
 	detail := fmt.Sprintf("containerd %s; namespace %s; %s", version, d.cfg.Namespace, d.cfg.shimName())
+	if d.cfg.Network != nil {
+		network, networkErr := d.checkNetwork(ctx)
+		if networkErr != nil {
+			return "", networkErr
+		}
+		detail += "; " + network
+	}
 	if d.cfg.WorkspaceDir != "" {
 		if err = checkWorkspaceDir(d.cfg.WorkspaceDir); err != nil {
 			return "", fmt.Errorf("workspace directory %s: %w", d.cfg.WorkspaceDir, err)

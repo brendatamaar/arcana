@@ -123,6 +123,26 @@ func TestValidate(t *testing.T) {
 			c.Workspace.Backend = "tmpfs"
 			c.Runtime.Containerd.Namespace = ""
 		}},
+		{"containerd allowlist bad cni dir", "runtime.containerd.cni_bin_dir", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Runtime.Containerd.Allowlist = true
+			c.Runtime.Containerd.CNIBinDir = "cni"
+		}},
+		{"containerd allowlist bad egress subnet", "runtime.containerd.egress_subnet", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Runtime.Containerd.Allowlist = true
+			c.Runtime.Containerd.EgressSubnet = "172.29.0.1/20"
+		}},
+		{"containerd allowlist bad state dir", "runtime.containerd.state_dir", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Runtime.Containerd.Allowlist = true
+			c.Runtime.Containerd.StateDir = "../run"
+		}},
+		{"containerd allowlist without resolvers", "network.proxy_dns", func(c *Config) {
+			c.Runtime.Driver = "containerd"
+			c.Runtime.Containerd.Allowlist = true
+			c.Network.ProxyDNS = nil
+		}},
 		{"containerd allowlist", "network.default_mode", func(c *Config) {
 			c.Runtime.Driver = "containerd"
 			c.Workspace.Backend = "tmpfs"
@@ -162,6 +182,13 @@ func TestValidate(t *testing.T) {
 		c.Workspace.Backend = "volume"
 		if err := c.Validate(); err != nil || !c.Runtime.SupportsVolumeWorkspace() {
 			t.Fatalf("containerd with volume workspaces: %v", err)
+		}
+		if c.Runtime.SupportsAllowlist() {
+			t.Fatal("containerd supports allowlist only when switched on")
+		}
+		c.Runtime.Containerd.Allowlist, c.Network.DefaultMode = true, "allowlist"
+		if err := c.Validate(); err != nil || !c.Runtime.SupportsAllowlist() {
+			t.Fatalf("containerd with allowlist networking: %v", err)
 		}
 		c = Default()
 		c.Runtime.Driver = "firecracker"
