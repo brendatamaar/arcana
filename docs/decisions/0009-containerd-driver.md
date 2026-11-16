@@ -37,10 +37,8 @@ containerd started inside a privileged container with its socket in a directory 
 
 - **Network mode `none` only.** `allowlist` returns `runtime.Unsupported`: the per-sandbox networks and egress
   proxy (ADR 0004) are built on Docker networks.
-- **tmpfs workspaces only.** The default `volume` backend returns `Unsupported`. containerd has no volumes;
-  a snapshotter-backed directory would be owned by root and unwritable by UID 1000 without a privileged
-  step, and the volume watchdog assumes Docker volumes. The practical effect: `workspace.backend: tmpfs`
-  (memory-backed, hard size limit) is required.
+- **Volume workspaces need a privileged Arcana** (see "Volume workspaces" below); a non-root, non-1000
+  Arcana must use `workspace.backend: tmpfs`.
 - **Template images** must already be in the containerd namespace; the driver does not pull.
 - **Verified only nested.** containerd ran inside a privileged container, not on a bare host, and the
   server was containerd 2.2 (the client library is 2.4.2).
@@ -77,13 +75,42 @@ Running it found defects that the fake engine could not:
 
 ## Wired into `arcana serve`
 
-`runtime.driver: containerd` is selectable (with `workspace.backend: tmpfs`; see the
+`runtime.driver: containerd` is selectable (see the
 [configuration reference](../configuration.md#drivers)). `internal/runtime/factory` builds the driver for both
 the server and the doctor, and `arcana doctor` runs a driver-specific set of checks: the shared host checks, a
 connection to containerd and one real hardened sandbox proving the helper and its process cleanup. A request
 for `allowlist` networking is refused with `invalid_request`. `scripts/containerd-serve-e2e.sh` starts a real
 Arcana on the throwaway containerd with gVisor and checks doctor, create, exec with a remote exit code, file
 round trip, snapshot, fork, the refusal, and that sandboxes survive a restart and can then be destroyed.
+
+## Volume workspaces
+
+containerd has no named volumes, so the driver owns a host directory per sandbox:
+`<data_dir>/containerd/workspaces/<sandbox id>`, created before the container, bind-mounted read-write with
+`nosuid,nodev` at `/workspace`, and removed after the container is deleted. Size is a soft limit enforced by
+the same `du` watchdog as Docker volumes (the orchestrator is backend-agnostic).
+
+**Why it needs a privileged Arcana.** The sandbox user (UID 1000) must own `/workspace` and cannot chown
+anything, so whoever creates the directory must be able to give it to UID 1000: root (`chown`) or UID 1000
+itself. Any other user would also be unable to delete what the sandbox writes, so the driver refuses at create
+time with that explanation and `arcana doctor` reports it (the check creates, chowns and removes a probe
+directory). A snapshotter-backed directory would be root-owned and unwritable by UID 1000, and an
+overlay-with-image-parent mount cannot mount only the image's `/workspace`; both were considered and dropped.
+The parent directory stays `0700`, so no other host user can reach any workspace.
+
+**Lifecycle.** `Create` refuses an existing directory (a sandbox never inherits another's files) and removes
+its directory when container creation fails. `Destroy` deletes the container first and only then the
+directory, so a running sandbox never loses it and nothing writes during removal; a failed removal is
+returned, and the reaper retries. Removal handles directories the sandbox chmod'ed to 000 and never follows
+symlinks. `PruneOrphans` (the same hook the Docker driver implements, run at startup before admission) removes
+directories no kept sandbox owns, which covers a crash between creating the directory and the container.
+
+**Verification.** Unit tests cover the plan, the lifecycle, refusal, orphan pruning and the doctor check.
+`TestContainerd_VolumeWorkspace` runs on a real containerd with **runsc and runc**, as root (the script runs
+that test binary inside the containerd container): the sandbox user writes, the file appears on the host owned
+by UID 1000, the root filesystem stays read-only, `Destroy` removes a workspace with a 000 directory, and
+pruning removes an orphan. Not covered: a quota-enforcing filesystem (the limit stays soft), and a host where
+Arcana runs as UID 1000 rather than root (the ownership rule is unit-tested only).
 
 ## Comparison with the Docker driver
 
@@ -94,7 +121,7 @@ Design comparison first, then measurements.
 | Layers between Arcana and the runtime | Docker Engine, then containerd, then the shim | containerd, then the shim |
 | Root-equivalent access | The Docker socket | The containerd socket |
 | Isolation | Same runtimes (runsc by default); the engine applies a default seccomp profile to runc | Same runtimes; hardening comes only from the OCI spec this driver writes |
-| Workspace | Docker volume (default) or tmpfs | tmpfs only |
+| Workspace | Docker volume (default) or tmpfs | Host directory (default; Arcana must be root or UID 1000) or tmpfs |
 | Networking | `none` or allowlist with the egress proxy | `none` only |
 | Images | Pulled and checked by the engine | Must already be in the containerd namespace |
 | Operational fit | Anywhere Docker runs | Hosts that run containerd without Docker |

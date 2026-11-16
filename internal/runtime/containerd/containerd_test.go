@@ -87,9 +87,9 @@ func TestPlanContainer_RejectsWhatItCannotProvideSafely(t *testing.T) {
 		}
 	}
 	for name, mutate := range map[string]func(*runtime.Spec){
-		"allowlist network": func(s *runtime.Spec) { s.NetworkMode = "allowlist" },
-		"volume workspace":  func(s *runtime.Spec) { s.WorkspaceBackend = "volume" },
-		"default workspace": func(s *runtime.Spec) { s.WorkspaceBackend = "" },
+		"allowlist network":              func(s *runtime.Spec) { s.NetworkMode = "allowlist" },
+		"volume without a workspace dir": func(s *runtime.Spec) { s.WorkspaceBackend = "volume" },
+		"default workspace":              func(s *runtime.Spec) { s.WorkspaceBackend = "" },
 	} {
 		spec := testSpec()
 		mutate(&spec)

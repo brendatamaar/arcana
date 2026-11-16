@@ -12,7 +12,8 @@ runtime:
     host: unix:///var/run/docker.sock
     oci_runtime: runsc            # runsc | runc
     allow_insecure_runtime: false # must be true to use runc
-  # Used only when driver is containerd (needs workspace.backend: tmpfs, network mode none).
+  # Used only when driver is containerd (network mode none only; workspace.backend: volume needs Arcana to
+  # run as root or UID 1000, tmpfs works for any user).
   # containerd:
   #   address: /run/containerd/containerd.sock
   #   namespace: arcana

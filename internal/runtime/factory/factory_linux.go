@@ -24,7 +24,12 @@ func New(cfg config.Config, o Options) (Driver, error) {
 		return docker.New(c)
 	case "containerd":
 		k := cfg.Runtime.Containerd
-		return containerd.New(containerd.Config{Address: k.Address, Namespace: k.Namespace, OCIRuntime: k.OCIRuntime, AllowInsecureRuntime: k.AllowInsecureRuntime, InstallID: o.InstallID, HelperPath: o.HelperPath, FIFODir: k.FIFODir})
+		c := containerd.Config{Address: k.Address, Namespace: k.Namespace, OCIRuntime: k.OCIRuntime, AllowInsecureRuntime: k.AllowInsecureRuntime, InstallID: o.InstallID, HelperPath: o.HelperPath, FIFODir: k.FIFODir}
+		if cfg.Workspace.Backend == "volume" {
+			// Only a volume backend needs (and so checks for) the host directory and the privileges to own it.
+			c.WorkspaceDir = filepath.Join(cfg.DataDir, "containerd", "workspaces")
+		}
+		return containerd.New(c)
 	case "firecracker":
 		f := cfg.Runtime.Firecracker
 		root := filepath.Join(cfg.DataDir, "firecracker")

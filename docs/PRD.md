@@ -800,7 +800,7 @@ log:
   format: json                    # json | text
 ```
 
-`runtime.driver` selects the isolation driver (stretch, T4.2/T4.5/wiring). The containerd and Firecracker drivers support network mode `none` only and containerd needs `workspace.backend: tmpfs`; a configuration that asks otherwise is rejected at start, and a request for `allowlist` is refused with `invalid_request`. `arcana doctor` runs a driver-specific check set for them: the shared host checks, the driver's own prerequisites and one real hardened sandbox proving the helper and its cleanup. The runc guard (FR-DR-3) applies to both runtimes under `containerd`.
+`runtime.driver` selects the isolation driver (stretch, T4.2/T4.5/wiring). The containerd and Firecracker drivers support network mode `none` only; containerd's `volume` workspace is a host directory per sandbox that needs Arcana to run as root or UID 1000 (ADR 0009); a configuration that asks otherwise is rejected at start, and a request for `allowlist` is refused with `invalid_request`. `arcana doctor` runs a driver-specific check set for them: the shared host checks, the driver's own prerequisites and one real hardened sandbox proving the helper and its cleanup. The runc guard (FR-DR-3) applies to both runtimes under `containerd`.
 
 Until official images are published (v0.2), build the included minimal base with `docker build -t arcana-base:local templates/base`. Custom templates must provide the writable workspace ownership described in FR-TP-4; sandboxes always run as UID 1000.
 

@@ -110,7 +110,8 @@ func (r Runtime) OCI() (name string, insecure bool) {
 func (r Runtime) SupportsAllowlist() bool { return r.Driver == "docker" }
 
 // SupportsVolumeWorkspace reports whether the driver can back /workspace with a disk instead of memory.
-func (r Runtime) SupportsVolumeWorkspace() bool { return r.Driver != "containerd" }
+// Every driver can (containerd uses a host directory, see ADR 0009).
+func (r Runtime) SupportsVolumeWorkspace() bool { return true }
 
 // Docker configures the Docker connection and OCI runtime.
 type Docker struct {
@@ -512,9 +513,6 @@ func (c Config) validateRuntime(bad func(field, message string)) {
 		absolute("runtime.containerd.fifo_dir", c.Runtime.Containerd.FIFODir)
 		if c.Runtime.Containerd.Namespace == "" || len(c.Runtime.Containerd.Namespace) > 64 {
 			bad("runtime.containerd.namespace", "must be 1..64 characters")
-		}
-		if c.Workspace.Backend != "tmpfs" {
-			bad("workspace.backend", "must be tmpfs with the containerd driver (it has no disk-backed workspace)")
 		}
 	case "firecracker":
 		f := c.Runtime.Firecracker

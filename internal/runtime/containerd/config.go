@@ -31,6 +31,9 @@ type Config struct {
 	// it must be a path both can reach; the containerd default, /run/containerd/fifo, is root-only,
 	// which a non-root Arcana cannot use. Created with mode 0700 if missing.
 	FIFODir string
+	// WorkspaceDir holds one host directory per sandbox, bind-mounted at /workspace for the volume
+	// backend. Empty means only the tmpfs backend is available. The directory is created 0700.
+	WorkspaceDir string
 }
 
 var namespacePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
@@ -77,6 +80,9 @@ func (c Config) Validate() error {
 	}
 	if !filepath.IsAbs(c.FIFODir) || filepath.Clean(c.FIFODir) != c.FIFODir {
 		return runtime.Invalid{Field: "fifo_dir"}
+	}
+	if c.WorkspaceDir != "" && (!filepath.IsAbs(c.WorkspaceDir) || filepath.Clean(c.WorkspaceDir) != c.WorkspaceDir) {
+		return runtime.Invalid{Field: "workspace_dir"}
 	}
 	if !filepath.IsAbs(c.HelperPath) {
 		return runtime.Invalid{Field: "helper_path"}

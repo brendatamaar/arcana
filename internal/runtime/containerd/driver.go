@@ -92,12 +92,21 @@ func (d *Driver) Create(ctx context.Context, spec runtime.Spec) (runtime.Instanc
 	if err = ctx.Err(); err != nil {
 		return runtime.Instance{}, err
 	}
+	if p.Workspace != "" {
+		if err = prepareWorkspace(d.cfg.WorkspaceDir, p.Workspace); err != nil {
+			return runtime.Instance{}, err
+		}
+	}
 	if err = d.engine.Create(ctx, p); err != nil {
 		// A half-created container must not survive: remove it with a context that outlives
-		// the failed request.
+		// the failed request, then its workspace.
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		return runtime.Instance{}, errors.Join(fmt.Errorf("creating sandbox container: %w", err), d.engine.Delete(cleanup, p.ID))
+		deleteErr := d.engine.Delete(cleanup, p.ID)
+		if p.Workspace != "" && deleteErr == nil {
+			deleteErr = removeWorkspace(p.Workspace)
+		}
+		return runtime.Instance{}, errors.Join(fmt.Errorf("creating sandbox container: %w", err), deleteErr)
 	}
 	return runtime.Instance{ID: p.ID, SandboxID: spec.SandboxID, Labels: maps.Clone(p.Labels)}, nil
 }
@@ -107,12 +116,44 @@ func validID(id string) bool {
 	return ok
 }
 
-// Destroy is idempotent: a missing container is success.
+// Destroy is idempotent: a missing container is success. The workspace goes only after the container is
+// gone, so a running sandbox never loses its directory and nothing writes while it is removed.
 func (d *Driver) Destroy(ctx context.Context, id string) error {
-	if !validID(id) {
+	sandbox, ok := sandboxFromContainer(id)
+	if !ok {
 		return runtime.NotFound{ID: id}
 	}
-	return d.engine.Delete(ctx, id)
+	if err := d.engine.Delete(ctx, id); err != nil {
+		return err
+	}
+	if d.cfg.WorkspaceDir != "" {
+		return removeWorkspace(d.cfg.workspacePath(sandbox))
+	}
+	return nil
+}
+
+// PruneOrphans removes workspace directories no kept sandbox owns (a crash between creating the directory and
+// the container, or a destroy that died halfway). It runs before request admission, like the Docker driver's.
+func (d *Driver) PruneOrphans(ctx context.Context, keep map[string]bool) error {
+	if d.cfg.WorkspaceDir == "" {
+		return nil
+	}
+	ids, err := listWorkspaces(d.cfg.WorkspaceDir)
+	if err != nil {
+		return fmt.Errorf("listing workspaces: %w", err)
+	}
+	for _, id := range ids {
+		if keep[id] {
+			continue
+		}
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		if err = removeWorkspace(d.cfg.workspacePath(id)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Exec runs argv inside the sandbox.
@@ -159,7 +200,14 @@ func (d *Driver) Check(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("containerd is unreachable at %s: %w", d.cfg.Address, err)
 	}
-	return fmt.Sprintf("containerd %s; namespace %s; %s", version, d.cfg.Namespace, d.cfg.shimName()), nil
+	detail := fmt.Sprintf("containerd %s; namespace %s; %s", version, d.cfg.Namespace, d.cfg.shimName())
+	if d.cfg.WorkspaceDir != "" {
+		if err = checkWorkspaceDir(d.cfg.WorkspaceDir); err != nil {
+			return "", fmt.Errorf("workspace directory %s: %w", d.cfg.WorkspaceDir, err)
+		}
+		detail += "; volume workspaces in " + d.cfg.WorkspaceDir
+	}
+	return detail, nil
 }
 
 // HasImage reports whether the template image is in the configured containerd namespace.

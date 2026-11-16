@@ -25,7 +25,7 @@ A test fails if a key in the config struct is missing from this page.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `runtime.driver` | `docker` | `docker`, `containerd` or `firecracker`. Settings of the drivers you do not select are not checked. The containerd and Firecracker drivers support network mode `none` only, and containerd needs `workspace.backend: tmpfs`; see [drivers](#drivers). |
+| `runtime.driver` | `docker` | `docker`, `containerd` or `firecracker`. Settings of the drivers you do not select are not checked. The containerd and Firecracker drivers support network mode `none` only; see [drivers](#drivers). |
 | `runtime.docker.host` | `unix:///var/run/docker.sock` | Docker endpoint. Access is root-equivalent. |
 | `runtime.docker.oci_runtime` | `runsc` | `runsc` (gVisor) or `runc`. |
 | `runtime.docker.allow_insecure_runtime` | `false` | Must be `true` to select `runc`, which shares the host kernel. |
@@ -49,8 +49,12 @@ A test fails if a key in the config struct is missing from this page.
 
 - **docker** is the full-featured driver: disk-backed or tmpfs workspaces and allowlist networking.
 - **containerd** ([ADR 0009](decisions/0009-containerd-driver.md)) talks to containerd directly. It needs
-  `workspace.backend: tmpfs`, supports only network mode `none`, and template images must already be in its
-  namespace (`ctr -n arcana images import`). Arcana only needs access to the socket, not to Docker.
+  supports only network mode `none`, and template images must already be in its namespace
+  (`ctr -n arcana images import`). Arcana only needs access to the socket, not to Docker. Workspaces are tmpfs,
+  or (the default `volume` backend) a host directory per sandbox under `data_dir/containerd/workspaces`, bind
+  mounted at `/workspace`. The directory must belong to the sandbox user, so **volume workspaces need Arcana to
+  run as root (it chowns the directory) or as UID 1000**; `arcana doctor` checks this and reports any other user
+  with the fix (`workspace.backend: tmpfs`). Size is a soft limit enforced by the volume watchdog, as with Docker.
 - **firecracker** ([ADR 0007](decisions/0007-firecracker-driver.md)) runs each sandbox in a microVM. It needs
   `/dev/kvm`, Firecracker, the jailer and a guest kernel, supports network mode `none` only, and each template
   image needs a rootfs built with `scripts/build-rootfs.sh`. State and jails live under `data_dir/firecracker`.

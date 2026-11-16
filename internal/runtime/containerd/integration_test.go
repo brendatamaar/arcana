@@ -247,3 +247,71 @@ func TestContainerd_DestroyingOneSandboxLeavesTheOthersRunning(t *testing.T) {
 		})
 	}
 }
+
+// The volume workspace is a host directory the sandbox user owns. It needs Arcana to run as root (or UID
+// 1000), so scripts/containerd-test.sh runs this test as root inside the containerd container; as another
+// user it skips with the reason rather than passing without checking anything.
+func TestContainerd_VolumeWorkspace(t *testing.T) {
+	root := os.Getenv("ARCANA_CONTAINERD_WORKSPACE_DIR")
+	if root == "" || !workspaceOwnerOK(os.Geteuid()) {
+		t.Skip("needs ARCANA_CONTAINERD_WORKSPACE_DIR and a root or UID 1000 test process (scripts/containerd-test.sh runs it as root)")
+	}
+	for _, oci := range []string{"runsc", "runc"} {
+		t.Run(oci, func(t *testing.T) {
+			d := containerdFixture(t, oci)
+			d.cfg.WorkspaceDir = root
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			id, err := ids.New("sbx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec := runtime.Spec{SandboxID: id, Image: image(), WorkspaceBackend: "volume", NetworkMode: "none", Resources: runtime.Resources{CPUs: 0.5, MemoryMB: 256, DiskMB: 64, PIDs: 128}}
+			created, err := d.Create(ctx, spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = d.Destroy(context.Background(), created.ID) })
+
+			dir := d.cfg.workspacePath(id)
+			// The sandbox user can write, and what it writes lands on disk in the host directory, owned by it.
+			out, errOut, exit := run(t, d, created.ID, runtime.ExecRequest{Cmd: []string{"sh", "-c", "id -u; echo kept > /workspace/f && mkdir -p /workspace/a/b && echo x > /workspace/a/b/g && chmod 000 /workspace/a/b && echo done"}, Cwd: "/workspace"})
+			if exit.ExitCode != 0 || out != "1000\ndone\n" {
+				t.Fatalf("writing the workspace: %q %q %+v", out, errOut, exit)
+			}
+			data, err := os.ReadFile(dir + "/f")
+			if err != nil || string(data) != "kept\n" {
+				t.Fatalf("the file is not on the host: %q %v", data, err)
+			}
+			info, err := os.Stat(dir + "/f")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if owner := fileOwner(info); owner != sandboxUID {
+				t.Errorf("host file owner %d, want %d", owner, sandboxUID)
+			}
+			// It is a real directory mount, not memory, and the root filesystem is still read-only.
+			if out, _, exit = run(t, d, created.ID, runtime.ExecRequest{Cmd: []string{"sh", "-c", "(touch /etc/x 2>/dev/null && echo ETC-WRITABLE) || echo etc-readonly; cat /workspace/f"}}); exit.ExitCode != 0 || out != "etc-readonly\nkept\n" {
+				t.Fatalf("%q %+v", out, exit)
+			}
+			// The workspace outlives the container only until Destroy, which removes unreadable directories too.
+			if err = d.Destroy(ctx, created.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = os.Stat(dir); !os.IsNotExist(err) {
+				t.Fatalf("workspace survived destroy: %v", err)
+			}
+			// A crash left a directory with no container: pruning removes it, keeping the live one.
+			orphan := root + "/sbx_zzzzzzzzzzzzzzzzzzzz"
+			if err = os.MkdirAll(orphan+"/sub", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err = d.PruneOrphans(ctx, nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = os.Stat(orphan); !os.IsNotExist(err) {
+				t.Fatalf("orphan survived pruning: %v", err)
+			}
+		})
+	}
+}

@@ -123,7 +123,6 @@ func TestValidate(t *testing.T) {
 			c.Workspace.Backend = "tmpfs"
 			c.Runtime.Containerd.Namespace = ""
 		}},
-		{"containerd volume workspace", "workspace.backend", func(c *Config) { c.Runtime.Driver = "containerd" }},
 		{"containerd allowlist", "network.default_mode", func(c *Config) {
 			c.Runtime.Driver = "containerd"
 			c.Workspace.Backend = "tmpfs"
@@ -159,6 +158,10 @@ func TestValidate(t *testing.T) {
 		c.Runtime.Driver, c.Workspace.Backend = "containerd", "tmpfs"
 		if err := c.Validate(); err != nil {
 			t.Fatalf("containerd: %v", err)
+		}
+		c.Workspace.Backend = "volume"
+		if err := c.Validate(); err != nil || !c.Runtime.SupportsVolumeWorkspace() {
+			t.Fatalf("containerd with volume workspaces: %v", err)
 		}
 		c = Default()
 		c.Runtime.Driver = "firecracker"
