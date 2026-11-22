@@ -15,17 +15,32 @@ Baca AGENTS.md, `docs/PLAN.md`, `docs/DECISIONS.md`, detail fase target, dan Han
 ## 2. Gate
 
 Mulai OTOMATIS hanya jika SEMUA syarat terpenuhi:
-- semua dependensi fase target berstatus `done`
+- semua fase di `Depends on` fase target berstatus `done`. Hanya kolom ini yang dihitung sebagai dependensi.
 - DoD fase dependensi terakhir masih lulus (jalankan perintahnya)
-- working tree bersih
 - DoD fase target berupa perintah yang bisa dijalankan
 - Tasks dan Out of scope cukup jelas untuk dikerjakan tanpa menebak
+- checkout tempat bekerja bersih (lihat aturan fase lain di bawah)
 
 Jika tidak: BERHENTI. Jelaskan masalahnya (maksimal 10 baris), usulkan perbaikannya, lalu tunggu user.
 
+### Fase lain yang sedang `in-progress` atau `review`
+
+Fase lain yang belum selesai BUKAN blocker, kecuali fase itu ada di `Depends on` fase target. Jangan berhenti hanya karena ada fase lain yang belum selesai.
+
+- **Fase lain itu ada di `Depends on`:** berhenti. Ini dependensi yang belum `done`.
+- **Fase lain itu tidak ada di `Depends on`:** lanjut, dengan pengaturan berikut.
+  - Kerjakan fase target di branch atau worktree terpisah dari fase lain itu, supaya commit tidak tercampur. Pilih salah satu:
+    - thread worktree di T3 Code
+    - `delegate_task` dengan `isolation: "worktree"`
+    - `git switch -c phase/<ID>` jika checkout saat ini bersih
+  - Jika keduanya saling `Parallel-safe`: lanjut tanpa peringatan.
+  - Jika tidak saling `Parallel-safe`: tetap lanjut, tapi sebutkan di laporan file atau area yang berisiko konflik.
+- **Checkout saat ini kotor karena perubahan fase lain:** jangan berhenti, dan jangan menyentuh perubahan itu. Kerjakan fase target di worktree terpisah. Jika worktree tidak bisa dibuat, berhenti dan sarankan user membuka thread worktree baru.
+- **Fase tercantum di `Depends on` dan `Parallel-safe with` sekaligus:** ini kontradiksi di PLAN. Berhenti, lalu usulkan pemecahan fase. Contoh: bagian yang sudah selesai menjadi `P3` (`done`), sisanya menjadi `P3b`.
+
 ## 3. Kerjakan
 
-1. Set status `in-progress` di PLAN.md, lalu commit.
+1. Set status `in-progress` di PLAN.md, lalu commit di branch atau worktree yang dipakai untuk fase ini.
 2. Kerjakan task sesuai urutan, hanya dalam scope. Hal di luar scope dicatat di Handoff notes.
 3. Commit kecil per task. Setiap kali satu task selesai, centang task dan update Handoff notes.
 4. Pekerjaan paralel, review silang, atau eksplorasi besar: ikuti skill phase-routing.

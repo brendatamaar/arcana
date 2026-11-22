@@ -29,6 +29,7 @@ Jika satu saja tidak terpenuhi: BERHENTI. Laporkan status fase (maksimal 15 bari
    - Fase done: Goal + Handoff notes dari git log saja.
    - Fase sebagian/todo: Tasks (yang selesai dicentang), DoD berupa perintah, Out of scope.
    - DoD yang belum bisa dites: tambahkan task "tulis test X" di awal fase.
+   - `Depends on` hanya berisi fase yang benar-benar harus `done`. Jika fase lain hanya butuh bagian yang sudah selesai dari sebuah fase, pecah fase itu (`P3` done + `P3b` sisa). Jangan ada fase yang tercantum di `Depends on` dan `Parallel-safe with` sekaligus.
 3. `docs/DECISIONS.md`: 5-10 keputusan penting yang terlihat di kode.
 4. AGENTS.md: lengkapi bagian DI LUAR blok `repo-playbook:start/end` dengan stack, perintah test/lint/build, dan konvensi. Pertahankan aturan lama. Jangan ubah isi blok repo-playbook.
 5. CLAUDE.md: pastikan ada `@AGENTS.md`. Bagian yang tumpang tindih dipindah ke AGENTS.md; sisakan aturan khusus Claude saja.

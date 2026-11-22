@@ -56,6 +56,10 @@ Aturan:
 - DoD WAJIB berupa perintah yang bisa dijalankan. Jika test belum ada, task pertama fase = "tulis test X".
 - Satu fase = satu sesi kerja, diff yang masih bisa direview dalam 15-20 menit.
 - Fase `done` pada project lama cukup Goal + Handoff notes.
+- `Depends on` hanya berisi fase yang HARUS `done` sebelum fase ini dimulai. Fase lain yang sedang `in-progress` tidak menghalangi.
+- Sebuah fase tidak boleh tercantum di `Depends on` dan `Parallel-safe with` sekaligus.
+- Jika fase lain hanya butuh bagian yang sudah selesai dari sebuah fase, pecah fase itu (`P3` = bagian yang `done`, `P3b` = sisanya). Jangan memakai tanda bebas seperti "(sisa)".
+- Dua fase yang berjalan bersamaan dikerjakan di branch atau worktree terpisah.
 
 ## DECISIONS.md
 
