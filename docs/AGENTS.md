@@ -1,37 +1,28 @@
-# AGENTS.md
+# AGENTS.md (Detailed Reference)
 
-Instructions for AI coding agents (Claude Code and others) working in this repository. Read this file fully before making changes.
+Detailed technical reference for AI coding agents working in this repository. For the active phased workflow, skill usage, and concise rules, read root [`AGENTS.md`](../AGENTS.md) first.
 
 ## What this project is
 
-**Arcana** is a self-hosted, open-source sandbox orchestrator for AI agents, written in Go. It turns a Linux host with Docker into a service that creates isolated sandboxes (gVisor by default), runs commands with streamed output, transfers files, enforces resource and network limits, and later supports snapshots, forks, an MCP server and a read-only React web dashboard. Users install and operate it themselves.
+**Arcana** is a self-hosted, open-source sandbox orchestrator for AI agents, written in Go. It turns a Linux host with Docker (and optional `containerd` / Firecracker drivers) into a service that creates isolated sandboxes (gVisor by default), runs commands with streamed output, transfers files, enforces resource and network limits, and supports snapshots, forks, an MCP server, SDKs, and an embedded React web dashboard. Users install and operate it themselves.
 
 ## Source of truth
 
 | File | Role |
 |---|---|
-| `PRD.md` | What to build and why. Requirement IDs (`FR-…`, `NFR-…`, `ESC-…`) are referenced everywhere. |
-| `PLAN.md` | Task order, status, acceptance criteria, decision log, open questions. |
-| `AGENTS.md` | How to work: conventions, commands, rules. |
-| `docs/decisions/` | ADRs explaining design choices. |
+| `AGENTS.md` (root) | Active phased workflow, concise commands, and non-negotiable rules. |
+| `docs/PRD.md` | What to build and why. Requirement IDs (`FR-…`, `NFR-…`, `ESC-…`) are referenced everywhere. |
+| `docs/PLAN.md` | Phase table, architecture overview, phase details, and handoff notes. |
+| `docs/DECISIONS.md` | Concise log of technical decisions (links to detailed ADRs in `docs/decisions/`). |
+| `docs/AGENTS.md` | This file: detailed commands, repo layout, Go/frontend conventions, full security rules, testing, and approved dependencies. |
 
-If these documents conflict, **stop**, record the conflict in `PLAN.md` → Open questions, and ask. Never resolve a conflict by weakening a security requirement.
-
-## Workflow
-
-1. Open `PLAN.md`. Take the first task marked `[ ]` whose dependencies are all `[x]`. Mark it `[~]`.
-2. Read the PRD sections the task references. Skim related ADRs.
-3. Plan the change briefly (files, types, tests) before writing code.
-4. Write tests alongside or before the implementation.
-5. Run `make check`. If the task touches Docker, the runtime, exec, files, networking or reconciliation, also run `make test-integration`, and `make test-escape` when security behaviour could be affected. From T3.7 onward, if it touches `web/`, `internal/webui` or `api/openapi.yaml`, also run `make web-check`. Before T3.7, Go, generation and security checks remain mandatory.
-6. Mark the task `[x]` in `PLAN.md` with a `> Done:` note. Update `PRD.md` and the Decision log if the design changed.
-7. Commit once per task.
+If these documents conflict, **stop**, note the conflict, and ask. Never resolve a conflict by weakening a security requirement.
 
 **Stop and ask** instead of guessing when:
-- an acceptance criterion cannot be met as written;
+- a phase DoD or acceptance criterion cannot be met as written;
 - a change would relax any default in PRD §12 (security) or §8.1;
 - a new dependency outside the approved list is needed;
-- a spike result contradicts the PRD;
+- a spike or verification result contradicts the PRD;
 - you would need to change the public API shape in a way not described in PRD §10.
 
 ## Commands
@@ -230,7 +221,7 @@ Breaking changes to `/v1` after v0.1 require a Decision log entry.
 ## Commits and changelog
 
 - Conventional Commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `build:`, `ci:`, `chore:`, with an optional scope (`feat(exec): stream stdin`).
-- Reference the task ID in the body (`Task: T1.10`).
+- Reference the phase ID in the body when relevant (`Phase: P5`).
 - User-visible changes get a line under `## [Unreleased]` in `CHANGELOG.md`.
 
 ## Environment notes
@@ -242,12 +233,11 @@ Breaking changes to `/v1` after v0.1 require a Decision log entry.
 - Tests that need runsc or `/dev/kvm` must skip with a clear message when unavailable, never fail silently or pass vacuously.
 - The LLM used by `examples/fix-agent` is configured through env vars (`FIXAGENT_BASE_URL`, `FIXAGENT_MODEL`, `FIXAGENT_API_KEY`); the default targets a local Ollama endpoint. Never commit API keys.
 
-## Definition of done (every task)
+## Definition of done (baseline for every phase)
 
-- [ ] All acceptance criteria in `PLAN.md` met; verify commands pass.
-- [ ] `make check` passes; integration, escape and `make web-check` pass when relevant.
+- [ ] Phase Definition of Done commands in `docs/PLAN.md` (or `docs/phases/`) pass.
+- [ ] `make check` passes; integration, escape, `make web-check`, and SDK/Helm checks pass when relevant.
 - [ ] Tests cover success, failure and limit cases.
 - [ ] No security rule violated; no default weakened.
-- [ ] Docs, PRD, CHANGELOG and Decision log updated where relevant.
-- [ ] `PLAN.md` status and `> Done:` note updated.
-- [ ] One focused commit with a Conventional Commit message.
+- [ ] Docs, `docs/PRD.md`, `CHANGELOG.md` and `docs/DECISIONS.md` updated where relevant.
+- [ ] `docs/PLAN.md` status and `Handoff notes` updated; small Conventional Commits made cleanly.

@@ -2,7 +2,7 @@
 
 Arcana is one Go binary that turns a Linux host with Docker into a sandbox service. This page explains the
 parts, how a request flows through them, and where the security boundaries are. The reasons behind the main
-choices are in the [decision records](decisions.md).
+choices are in the [decision records](adrs.md).
 
 ## Overview
 

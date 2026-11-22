@@ -1,597 +1,100 @@
-# PLAN — Arcana execution plan
+# PLAN
 
-This file is the ordered, checkable plan for building Arcana. `PRD.md` defines **what** and **why**; this file defines **in what order** and **how we know a task is done**; `AGENTS.md` defines **how to work** in the repo.
+## Arsitektur ringkas
+- **Binary tunggal (`cmd/arcana`)**: HTTP/WebSocket/SSE API (`internal/api`, `internal/stream`, OpenAPI `api/openapi.yaml` → `oapi-codegen`), CLI (`pkg/client`), MCP stdio (`internal/mcp`), dan dashboard React ter-embed (`web/` → `internal/webui`).
+- **Control plane (`internal/orchestrator`)**: state machine lifecycle sandbox, quota & rate limit, sync/streaming exec, operasi file & snapshot (selalu via exec di dalam sandbox), warm pool, TTL/idle reaper, volume watchdog, startup reconciliation, event bus (`internal/events`), audit async (`internal/audit`), dan Prometheus metrics (`internal/metrics`).
+- **Storage & Auth**: pure-Go SQLite (`internal/store` — `modernc.org/sqlite`, goose, sqlc) dan auth API key / cookie session + CSRF allowlist (`internal/auth`).
+- **Runtime & Isolation (`internal/runtime`)**: driver pluggable — Docker (`runsc` default / `runc` opt-in), `containerd` v2 (`runsc`, volume host-dir, allowlist CNI), Firecracker microVM (`cmd/arcana-init`, `cmd/envd` gRPC over vsock/Unix), dan `fake` untuk unit test.
+- **Helper & Network**: helper statis `sbx-exec` (`internal/sbxexec`, subreaper + pidfd) dan egress allowlist via jaringan internal + dedicated `runsc` proxy (`internal/netpolicy`).
 
-## How to use this file (for Claude and other agents)
-
-1. Work on **one task at a time**, in order. Pick the first task whose status is `[ ]` and whose dependencies are all `[x]`.
-2. Before starting, change its status to `[~]` and read the PRD sections it references.
-3. Implement until every acceptance criterion is met and every verify command passes.
-4. Mark the task `[x]` and add a one-line note under it (`> Done: …`) with anything the next task should know.
-5. If blocked, mark `[!]`, write the reason under the task, add an entry to **Open questions**, and stop. Do not work around a blocker by weakening a security requirement.
-6. If a spike or implementation changes a design decision, add an entry to the **Decision log** and update `PRD.md` in the same commit.
-7. Commit after each task (Conventional Commits, see `AGENTS.md`). Never batch several tasks into one commit.
-
-Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
-
-## Milestones
-
-| Phase | Release | Goal | Exit criteria |
-|---|---|---|---|
-| 0 | — | Foundations and risk spikes | Repo builds in CI; spike findings recorded; PRD updated where spikes disagree |
-| 1 | v0.1 | Core MVP | Lifecycle, exec, files, limits, reaper, CLI, doctor, Go client; escape suite v1 green on runsc in CI |
-| 2 | v0.2 | Self-hosting ready | Templates, warm pool, allowlist networking, audit, metrics, releases and installers, docs |
-| 3 | v0.3 | Agent ecosystem and showcase | Snapshots and fork, MCP, SDKs, reference agent, benchmarks, read-only React dashboard, docs site |
-| 4 | Stretch | Depth | envd, Firecracker, runtime comparison, full web dashboard, containerd, Helm |
+## Fase
+| ID | Nama | Status | Depends on | Parallel-safe with |
+|----|------|--------|------------|--------------------|
+| P0 | Foundations & spikes | done | - | - |
+| P1 | Core MVP (v0.1) | done | P0 | - |
+| P2 | Self-hosting ready (v0.2) | done | P1 | - |
+| P3 | Agent ecosystem & showcase (v0.3) | done | P2 | - |
+| P4 | Stretch runtimes & platform | done | P3 | - |
 
 ---
 
-## Phase 0 — Foundations and spikes
+## P0 - Foundations & spikes
+Status: done
+Depends on: -
+Parallel-safe with: -
 
-### [x] T0.1 Repository scaffold
-- **Deps:** none
-- **Do:**
-  - `go mod init github.com/brendatamaar/arcana`; directory layout from `AGENTS.md`.
-  - `cmd/arcana/main.go` with Cobra root command and `version` subcommand (version injected through `-ldflags`).
-  - `Makefile` targets: `build`, `test`, `test-integration`, `test-escape`, `lint`, `generate`, `verify-generated`, `check`, `clean`.
-  - `.golangci.yml` (enable at least: `govet`, `staticcheck`, `errcheck`, `gosec`, `revive`, `gofumpt`, `misspell`).
-  - `LICENSE` (Apache-2.0), `README.md` stub, `CHANGELOG.md`, `.gitignore`, `.editorconfig`.
-  - GitHub Actions `ci.yml`: Go setup, `make check`, on push and pull request.
-- **Acceptance:** `make check` passes locally and in CI; `arcana version` prints version, commit and build date.
-- **Verify:** `make check && go run ./cmd/arcana version`
-> Done: Repository scaffold, version metadata, Make targets, lint configuration and CI added. Local make check and version checks passed; CI candidate dd198bd passed (https://github.com/brendatamaar/arcana/actions/runs/41220302481). Runtime spikes will use the owner-authorized Linux VPS.
+### Goal
+Membangun scaffold repo, CI dasar, dan memvalidasi 4 risiko utama (Docker+`runsc` exec/TTY, terminasi process tree, workspace/file via exec, jaringan allowlist) sebelum implementasi MVP.
 
-### [x] T0.2 Spike: Docker + runsc lifecycle and exec streaming
-- **Deps:** T0.1
-- **Do:** Throwaway program in `spikes/001-runsc-exec/` using the official Docker Go client: create and start a container with `Runtime: "runsc"` and the hardening flags from PRD FR-RL-2, run an exec with attached stdout/stderr (demultiplexed) and stdin, run a TTY exec with resize, then destroy. Measure cold create time (20 runs, p50/p95) for runc and runsc.
-- **Acceptance:** `docs/spikes/001-runsc-exec.md` records: what works, API quirks, measured timings, and whether PRD §8.2 targets look realistic.
-- **Verify:** document exists and includes a timing table.
-
-> Done: Official Moby client lifecycle, attached demux/stdin and TTY resize passed under runc and runsc; 20 sequential timings per runtime recorded in docs/spikes/001-runsc-exec.md. VPS make check, test-integration and test-escape targets passed; the latter two remain scaffold targets until the real suites are introduced.
-
-### [x] T0.3 Spike: process-tree termination with `sbx-exec`
-- **Deps:** T0.2
-- **Do:** Minimal `cmd/sbx-exec` prototype (static, `CGO_ENABLED=0`) implementing `run`, `kill` and `status` per PRD §9.4. Bind-mount it read-only into a runsc container. Test: a command that spawns children and ignores SIGTERM is fully killed on timeout and on `kill`; TTY mode keeps job control working (`Setpgid` + `Foreground` + `Ctty` in `SysProcAttr`). Repeat under runc. If the bind mount misbehaves under runsc, test the fallback of copying the helper in through exec + tar (PRD R5).
-- **Acceptance:** `docs/spikes/002-process-termination.md` with results for runsc and runc, chosen mechanism, and any PRD changes.
-- **Verify:** document exists; prototype tests pass.
-
-> Done: Static stdlib helper, parser tests and attack tests passed under runc/runsc, including ioctl-verified foreground TTY and second-sandbox health. make check, test-integration and test-escape passed; runsc /proc tpgid quirk documented in docs/spikes/002-process-termination.md.
-
-### [x] T0.4 Spike: workspace backends and exec-based file transfer
-- **Deps:** T0.2
-- **Do:** Under runsc: (a) named volume at `/workspace`; stream a tar in and out through exec (`tar -xzf -` / `tar -czf -`); confirm contents round-trip. (b) tmpfs `/workspace` with a size limit; confirm ENOSPC at the limit. (c) Confirm read-only rootfs + tmpfs `/tmp` and `/run/sbx`. (d) Verify that files written inside the sandbox can be read and archived back through exec with identical contents, confirming the chosen transfer path for PRD R1. (e) Measure `du -sb /workspace` cost on a 10k-file tree.
-- **Acceptance:** `docs/spikes/003-workspace.md` with results and recommended watchdog interval.
-- **Verify:** document exists.
-
-> Done: Named-volume binary/archive round trips through exec, rootfs/tmpfs checks and workspace ENOSPC passed under runsc; 10k-file du measured at 547–644 ms, retaining the 15s watchdog interval. make check, test-integration and test-escape passed; findings in docs/spikes/003-workspace.md.
-
-### [x] T0.5 Spike: allowlist networking topology
-- **Deps:** T0.2
-- **Do:** Create an internal Docker network with an explicit /28 subnet, attach a runsc sandbox and a proxy container (simple Go `CONNECT` proxy) that is also attached to a normal bridge network. Confirm: sandbox reaches an allowlisted host only through the proxy; direct TCP fails; `169.254.169.254` unreachable; a second sandbox on a different internal network is unreachable. Note any DNS behaviour on internal networks.
-- **Acceptance:** `docs/spikes/004-network.md` with topology diagram, results and recommended design.
-- **Verify:** document exists.
-
-> Done: Internal /28 topology passed CONNECT allow/deny, direct internet/metadata denial and live second-sandbox isolation under runsc. DNS and pre-start interface requirements recorded in docs/spikes/004-network.md and PRD; make check, test-integration and test-escape passed.
-
-### [x] T0.6 Record decisions
-- **Deps:** T0.2–T0.5
-- **Do:** Write ADRs in `docs/decisions/` (`0001-runtime-docker-runsc.md`, `0002-exec-helper.md`, `0003-workspace-and-files.md`, `0004-network-egress.md`). Update `PRD.md` wherever spikes changed the design. Delete `spikes/` code (keep the docs).
-- **Acceptance:** ADRs exist; PRD consistent with findings; Decision log below updated.
-- **Verify:** `make check`
-> Done: ADRs 0001–0004 recorded; PRD DNS/interface details and exec-only spike scope are consistent with findings. Temporary spikes/ code and dependencies removed; prototype helper and reusable tests retained. Final VPS make check, test-integration, test-escape, static build and version checks passed; no spike containers, networks or volumes remain.
+### Handoff notes
+- Selesai penuh (T0.1–T0.6); bukti di `docs/spikes/001`–`004` dan `docs/decisions/0001`–`0004`.
+- Kode throwaway `spikes/` sudah dihapus; `sbx-exec` prototipe dan fixture test dipertahankan untuk P1.
+- Temuan penting: Docker embedded DNS dan hot-attach interface pada proxy `runsc` tidak andal, sehingga proxy memerlukan DNS eksplisit dan semua interface terpasang sebelum start.
 
 ---
 
-## Phase 1 — v0.1 Core MVP
+## P1 - Core MVP (v0.1)
+Status: done
+Depends on: P0
+Parallel-safe with: -
 
-### [x] T1.1 Configuration
-- **Deps:** T0.6 · **PRD:** §13, NFR-OPS-3
-- **Do:** `internal/config` with koanf: defaults struct, YAML file, env overrides (`ARCANA_` + `__` separator), validation (ranges, CIDR parsing, defaults ≤ maximums, allowed roots absolute, runc guard). `--config` flag on root command. Ship `deploy/config.example.yaml` matching PRD §13 (v0.1 keys active, later keys commented).
-- **Acceptance:** invalid configs produce clear, field-specific errors; env overrides work for nested keys.
-- **Verify:** `go test ./internal/config/...` (table-driven: defaults, file, env, each validation rule)
+### Goal
+Merilis MVP self-hosted v0.1 yang aman secara default: lifecycle sandbox, sync & streaming exec, Files API, reaper/reconciliation, Go client, CLI, `doctor`, dan escape suite v1 di CI `runsc`.
 
-> Done: Added koanf defaults/YAML/environment loading, field-specific validation, safe runtime/network guards, root --config flag and the versioned example configuration. go test ./internal/config/... and make check passed.
-
-### [x] T1.2 Logging, IDs and API errors
-- **Deps:** T1.1 · **PRD:** §9.6, §10.3, NFR-OPS-1, NFR-SEC-4
-- **Do:** `slog` setup (json/text, level); request ID middleware; `internal/ids` (prefixed `crypto/rand` base32 IDs); `internal/apierr` with typed error codes mapped to HTTP status and the JSON error envelope; a redaction helper so API keys and env values never reach logs.
-- **Acceptance:** every error code in PRD §10.3 has a constructor and status mapping; IDs match the regex `^(sbx|exe|snp|key|aud|ses|req)_[a-z2-7]{20}$`.
-- **Verify:** `go test ./internal/ids/... ./internal/apierr/...`
-
-> Done: Added cryptographic IDs, typed API errors/statuses/envelopes, request ID middleware and JSON/text slog configuration with redaction. Task verification and make check passed; new package coverage is 96–100%.
-
-### [x] T1.3 Store
-- **Deps:** T1.1 · **PRD:** §11, NFR-REL-3
-- **Do:** `internal/store` using `modernc.org/sqlite` (WAL, `busy_timeout`, foreign keys on, single writer); goose migrations embedded with `embed.FS` and applied on open; sqlc config and queries for `api_keys`, `sandboxes`, `execs`, `meta` (snapshots and audit come later). Store `install_id` in `meta` on first open.
-- **Acceptance:** fresh DB migrates; re-open is idempotent; queries generated by sqlc compile; `make verify-generated` detects stale sqlc output.
-- **Verify:** `make generate && go test ./internal/store/...`
-
-> Done: Embedded goose migration, pure-Go SQLite with per-connection WAL/foreign keys/5s busy timeout and one writer, atomic installation ID, pinned sqlc tool and bounded generated queries added. make generate, store tests, CGO_ENABLED=0 store tests and make check passed; stale-source probe correctly failed verify-generated; store coverage 75.5% excluding generated code.
-
-### [x] T1.4 API keys and auth
-- **Deps:** T1.2, T1.3 · **PRD:** FR-AU-1…5
-- **Do:** `internal/auth`: key generation (`arc_live_` + 32 base62 chars), SHA-256 hashing, constant-time comparison, prefix display, `last_used_at` update (debounced), admin flag; bootstrap admin key on empty DB (print once, write `data_dir/admin.key` with `0600`); HTTP middleware putting the principal in context; `arcana keys create|list|revoke` operating on the local DB.
-- **Acceptance:** revoked keys rejected; non-admin cannot call admin endpoints; bootstrap happens exactly once; key never appears in logs.
-- **Verify:** `go test ./internal/auth/...`
-
-> Done: Added unbiased base62 keys, SHA-256 storage and constant-time verification, immediate revocation with debounced usage timestamps, serialized one-time admin bootstrap, bearer/admin middleware and local keys CLI. Auth/CLI tests, bootstrap mutation/fuzz checks, make check and CGO_ENABLED=0 make build passed. Native absolute host data paths are accepted; sandbox roots retain POSIX validation. Bootstrap is wired into serve by T1.5.
-
-### [x] T1.5 OpenAPI spec and HTTP server skeleton
-- **Deps:** T1.2, T1.4 · **PRD:** §10
-- **Do:** `api/openapi.yaml` (OpenAPI 3.0) covering all v0.1 endpoints, schemas and error envelope; `oapi-codegen` configured for std `net/http` server and models into `internal/api/gen`; `make generate` wires it; `internal/api` server with routing, auth middleware, request ID, panic recovery, JSON helpers, `/v1/health`; `arcana serve` starts the server with graceful shutdown (NFR-REL-2). Warn when listen address is not loopback (NFR-SEC-3).
-- **Acceptance:** spec validates; generated code compiles; unimplemented handlers return 501 with the standard envelope; `serve` shuts down cleanly on SIGTERM.
-- **Verify:** `make generate verify-generated && go test ./internal/api/...`
-
-> Done: Validated v0.1 OpenAPI contract, pinned standard HTTP generation, auth/request IDs/body caps/recovery/JSON helpers, key endpoints and protected 501 stubs added. serve bootstraps admin and drains on cancellation/SIGTERM. make generate verify-generated, API tests and make check passed; Linux CGO_ENABLED=0 build, actual SIGTERM/private-key checks, auth/API race tests and retained integration/escape suites passed on the authorized VPS. API coverage 84.2%; web-check deferred by owner until T3.7.
-
-### [x] T1.6 Runtime driver interface and fake driver
-- **Deps:** T1.1 · **PRD:** §9.3
-- **Do:** `internal/runtime` with `Driver`, `Spec`, `Instance`, `ExecRequest`, `ExecSession`, `ExitInfo`, `Stats`, `Capabilities`. `internal/runtime/fake`: in-memory driver that can script exec output, exit codes, delays and failures, for orchestrator unit tests.
-- **Acceptance:** fake driver satisfies the interface with compile-time assertion; fake has its own tests.
-- **Verify:** `go test ./internal/runtime/...`
-
-> Done: Shared driver/session/spec/resource types and typed runtime errors added. The concurrency-safe fake scripts streams, exits, failures and channel-controlled delays, bounds recorded data/instances/scripts, clones mutable inputs and cancels sessions on destroy. Runtime race tests, make check and VPS integration/escape suites passed.
-
-### [x] T1.7 Docker driver
-- **Deps:** T1.6 · **PRD:** FR-RL-1, FR-RL-2, FR-RL-3, §9.5, FR-DR-3
-- **Do:** `internal/runtime/docker` using the official Docker Engine Go client: create + start with runtime from config, resource limits (NanoCPUs, Memory, MemorySwap = Memory, PidsLimit, ulimits), `CapDrop: ALL`, `SecurityOpt: no-new-privileges`, `ReadonlyRootfs`, `User: 1000:1000`, tmpfs `/tmp` and `/run/sbx` with size limits, workspace volume or tmpfs, `NetworkMode: none`, helper bind mount (read-only), labels and names; init process keeping the container alive (`--init` + `sleep infinity` or equivalent); exec with demuxed streams or TTY; resize; destroy (container, then volume; idempotent; ignores not-found); list by labels; stats.
-- **Acceptance:** integration tests (build tag `integration`) create, exec, destroy a sandbox under runsc when available and runc otherwise; all hardening flags asserted via container inspect.
-- **Verify:** `go test ./internal/runtime/docker/... && make test-integration`
-
-> Done: Official Moby driver enforces OCI opt-in, all hardening/resource flags, managed ownership, bounded streaming/status polling, safe partial cleanup and idempotent container/volume destruction. Unit race tests and make check passed; VPS tests inspected actual flags and verified UID/workspace, readonly root, TTY resize, tmpfs ENOSPC, peer health and cleanup under runsc and explicit runc with both backends; full integration/escape suites passed. Unit coverage 79.4%. Minimal arcana-base:local Dockerfile seeds UID 1000 workspace ownership until T2.1 publishes official images.
-
-### [x] T1.8 `sbx-exec` helper
-- **Deps:** T0.3, T1.7 · **PRD:** §9.4, FR-EX-4
-- **Do:** Production version of `cmd/sbx-exec` from the spike: `run`, `kill`, `status`; status JSON in `/run/sbx`; real command exit codes in status, with transport exits 0/124 for completed success/failure and 125 for helper faults; TTY mode handling; no dependencies beyond stdlib. Build it in `make build` before Arcana, embed the binary with `embed.FS` (`internal/helper`), and write it to `data_dir/bin/sbx-exec` (mode 0755, checksum-verified) at `serve` start.
-- **Acceptance:** unit tests for argument parsing and status; integration test: child processes that ignore SIGTERM are killed on timeout and on `kill`, under runsc.
-- **Verify:** `go test ./cmd/sbx-exec/... && make test-integration`
-
-> Done: Production subreaper/pidfd controller reaps detached descendants before atomic completion, separates transport from actual exit codes, bounds state and cancellation, and embeds reproducible static amd64/arm64 helpers with checksum-verified atomic installation. Parser/status/core tests, mutation proof, 101125 fuzz executions, make check, Linux lint, full integration/escape suites and static build passed. Real serve verified helper checksum/mode, private admin key, health and SIGTERM. Linux helper coverage 70.6%; protocol 100%. tmpfs workspace execution verified under runsc/runc.
-
-### [x] T1.9 Orchestrator: lifecycle
-- **Deps:** T1.3, T1.6 · **PRD:** FR-LC-1…4, FR-LC-6, FR-LC-9, FR-TP-1
-- **Do:** `internal/orchestrator`: resolve template and merge overrides (clamped to maximums), quota checks, create via driver, persist state transitions, get/list with ownership filtering, idempotent destroy, keepalive, activity tracking. Wire handlers for sandbox endpoints.
-- **Acceptance:** unit tests with fake driver cover state machine, quotas, clamping, ownership (non-admin gets 404 for others' sandboxes), driver failure → `failed` with reason.
-- **Verify:** `go test ./internal/orchestrator/... ./internal/api/...`
-
-> Done: Added pure lifecycle decisions, atomic quota reservations and transition history, template/env/resource/TTL resolution, ownership-filtered state/label pagination, idempotent destroy and TTL-preserving activity. Sandbox HTTP handlers and production Docker wiring are active. Fake-driver/API race tests, terminal-state mutation proof, 2866 fuzz executions, Windows and Linux make check, full integration/escape suites, real runsc lifecycle and static build/serve checks passed.
-
-### [x] T1.10 Sync exec
-- **Deps:** T1.8, T1.9 · **PRD:** FR-EX-1…3, FR-EX-5, FR-EX-6, FR-EX-8, FR-EX-9
-- **Do:** Exec manager that wraps commands with `sbx-exec run`, enforces timeout defaults and maximums, captures output with a combined cap (keeps draining after the cap), reads final status via `sbx-exec status`, records the `execs` row, enforces per-sandbox concurrency, and starts a host-side hard deadline (timeout + 10 s → destroy sandbox with `exec_deadline`). `cmd` vs `shell` validation. UTF-8 sanitising of output.
-- **Acceptance:** unit tests with fake driver for caps, timeouts, concurrency, deadline; integration test runs `python3 -c`/`sh -c` style commands with expected exit codes.
-- **Verify:** `go test ./internal/orchestrator/... && make test-integration`
-
-> Done: Added supervised sync exec with strict argv/shell/path validation, real exit metadata, combined capped capture that keeps draining, UTF-8 sanitization, per-sandbox concurrency, independent host/cancellation deadlines and fail-closed destruction on uncertain cleanup. Every accepted exec records timing/counts without output content. HTTP auth/ownership and fake-driver tests, two guard mutations, 36094 fuzz executions, Windows/Linux make check, full integration/escape suites, runsc argv/shell/timeout/cancellation with peer health, static build and serve checks passed. Fixed procfs ESRCH disappearance handling without weakening cleanup proof; the runsc kill attack passed ten repetitions.
-
-### [x] T1.11 Streaming exec (WebSocket)
-- **Deps:** T1.10 · **PRD:** FR-EX-7, §10.4
-- **Do:** `internal/stream` using `coder/websocket`: protocol messages exactly as PRD §10.4, start-first validation, stdin and stdin_close, TTY + resize, cancel via `sbx-exec kill`, cancel on client disconnect, backpressure with 1 MB send buffer, ping/pong keepalive, close after `exit`.
-- **Acceptance:** tests with an in-process server and fake driver for every message type, disconnect handling and backpressure; integration test streams output of a command that prints over time.
-- **Verify:** `go test ./internal/stream/... && make test-integration`
-
-> Done: Added strict start-first WebSocket protocol, binary-safe live output/stdin, stdin close, TTY/resize, cancellation/disconnect cleanup, 1 MiB bounded backpressure, frame/admission caps, ping/pong and terminal close. Streaming reuses exec proof/quotas/records without retaining output; shutdown drains accepted streams before driver/store closure. In-process fake-driver tests cover all messages, limits, slow readers, ordering and shutdown; two guard mutations and 77798 fuzz cases passed. Windows/Linux make check, full integration/escape suites, real runsc stdin-gated live output/exit, static build and serve checks passed. Console dimensions are forwarded only for TTY execs.
-
-### [x] T1.12 Files API
-- **Deps:** T1.10 · **PRD:** FR-FS-1…5
-- **Do:** Path validation (absolute, cleaned, under `allowed_roots`, reject NUL and `..` escape, including URL-encoded forms decoded by the router); operations through exec inside the sandbox: write (stdin → a stdlib-only `sbx-exec write` subcommand via argv, creating parent dirs; shared path validation before use), read (with size check first via `stat`), list (`find` with depth or a small helper subcommand of `sbx-exec` producing JSON — prefer the helper for consistent output), delete, archive upload (`tar -xzf - -C path`) and download (`tar -czf - -C path .`), size caps enforced while streaming.
-- **Acceptance:** path validation table tests; integration tests for each operation; symlink in workspace pointing to `/etc/passwd` returns the **sandbox's** file, never the host's.
-- **Verify:** `go test ./internal/orchestrator/... && make test-integration`
-
-> Done: Added shared lexical path validation, sandbox-local argv-only file utilities, atomic bounded writes, descriptor-sized binary reads, bounded listings, deletion and opaque tar upload/download through supervised exec. Auth/ownership, encoded traversal, binary/limit and malformed metadata tests passed; containment mutation failed as expected and 255703 fuzz inputs passed. Windows/Linux make check, full runsc integration/escape suites, static build and serve probe passed. Coverage: path validator 100%, API 88.4%, orchestrator 83.7%.
-
-### [x] T1.13 Reaper, watchdog and reconciliation
-- **Deps:** T1.9, T1.10 · **PRD:** FR-LC-5, FR-LC-7, FR-LC-8, FR-RL-3, NFR-REL-1
-- **Do:** Background loops with context cancellation: reaper (TTL, idle), workspace watchdog (`du` via exec for `volume` backend at the configured interval → destroy with `disk_quota`), startup reconciliation by labels (containers, volumes; networks once they exist), marking lost sandboxes `failed/lost`. Use an injectable clock for tests.
-- **Acceptance:** unit tests with fake clock and fake driver; integration test: kill Arcana mid-exec, restart, orphans removed (ESC-20).
-- **Verify:** `go test ./internal/orchestrator/... && make test-integration`
-
-> Done: Added independent context-owned TTL/idle reaper and supervised bounded volume watchdog without idle activity updates, pre-listener reconciliation with installation-scoped orphan cleanup, interrupted-exec fail-closed recovery, and optional destroy_on_shutdown. Fake-clock/driver boundary, quota, recovery and cleanup-failure tests passed. Actual runsc daemon SIGKILL/restart test (integration and escape) verifies lost cleanup, orphan volume/network removal, NULL unknown exit codes, peer/API/host health and graceful shutdown. Windows/Linux make check, full Linux integration/escape targets and static build passed.
-
-### [x] T1.14 Go client
-- **Deps:** T1.11, T1.12 · **PRD:** FR-SD-1
-- **Do:** `pkg/client`: typed methods for all v0.1 endpoints, streaming exec helper (`ExecStream` returning readers and an exit result), typed errors carrying API error codes, context support, configurable HTTP client. Godoc examples.
-- **Acceptance:** tests against an `httptest` server running the real API with fake driver.
-- **Verify:** `go test ./pkg/client/...`
-
-> Done: Added documented public Go client for every v0.1 endpoint, typed API errors, injected HTTP transport, context cancellation, bounded JSON/binary transfers, pagination and streaming exec readers/stdin/TTY resize/cancel/exit. Real API plus fake-driver tests cover lifecycle, keys, files, ownership and stream completion; protocol tests cover controls, invalid terminal frames, disconnects, limits and blocked-reader cleanup. Fixed the HTTP file-body EOF/read-deadline cancellation race discovered by these tests, retaining interruption of unfinished input. Windows/Linux make check, full runsc integration/escape suites and static build passed; client coverage 86.0%.
-
-### [x] T1.15 CLI
-- **Deps:** T1.14 · **PRD:** FR-CL-1, FR-CL-2
-- **Do:** Client subcommands via `pkg/client`: `sandbox create|list|get|rm`, `exec <id> -- argv` (streams; exits with remote code; `--tty` when stdin is a terminal), `files put|get|ls`. Human-readable tables by default, `--json` for scripting. `--server`/`--api-key` flags and env vars.
-- **Acceptance:** CLI tests using the client against an in-process server; `arcana exec` returns the remote exit code.
-- **Verify:** `go test ./cmd/arcana/...`
-
-> Done: Added client-backed sandbox create/list/get/rm, streaming argv exec, files put/get/ls, tables/JSON, server/key environment flags, opt-in stdin and Linux TTY raw-mode restoration. Context cancellation joins stream/input readers; named downloads use exclusive 0600 creation. In-process CLI tests, child-process exit-7 assertion and Linux pseudoterminal restoration test passed. Actual daemon/runsc integration verifies CLI exit 7 and binary put/get. Windows/Linux make check, full runsc integration/escape suites and static Linux build passed.
-
-### [x] T1.16 Doctor
-- **Deps:** T1.7, T1.3 · **PRD:** FR-DR-1…3
-- **Do:** `internal/doctor` with independent checks returning pass/warn/fail plus a fix hint (including gVisor install steps); `arcana doctor [--json]`; `serve` runs blocking checks at startup and refuses to start on failure.
-- **Acceptance:** unit tests with injectable system probes for each check; manual run documented in the PR.
-- **Verify:** `go test ./internal/doctor/... && go run ./cmd/arcana doctor`
-
-> Done: Added independent injectable doctor probes, table/JSON diagnostics and fix hints, Linux/kernel/cgroups/Docker/storage/data/SQLite/image/KVM checks, hardened runsc/helper proof with bounded cleanup, explicit runc warning/proof policy, and pre-listener startup gating after reconciliation. Unit tests cover each failure class, runtime registration, missing images, cancellation and output caps; actual daemon tests prove doctor failure and serve refusal on missing prerequisites. Windows/Linux make check, full runsc integration/escape suites and static build passed. Manual VPS doctor JSON exited successfully with only optional KVM warning; details in docs/doctor-validation.md. Doctor unit coverage 75.1%.
-
-### [x] T1.17 Escape suite v1 and CI with runsc
-- **Deps:** T1.12, T1.13 · **PRD:** §12.4 (v0.1 rows), NFR-SEC-2
-- **Do:** `test/escape` (build tag `escape`) implementing ESC-01…14, ESC-20, ESC-21 through the public API. CI job installs gVisor from its apt repository, runs `sudo runsc install`, restarts Docker, then runs `make test-integration test-escape` against runsc.
-- **Acceptance:** all v0.1 escape tests pass in CI on runsc; each test asserts host/Arcana health after the attack.
-- **Verify:** `make test-escape` locally with runsc; CI green.
-
-> Done: Added public REST/WebSocket ESC-01–14 and ESC-21 with bounded adversarial probes, setuid fixture validation, synchronized CPU/peer timing, PID cgroup-denial evidence without OOM, binary/symlink/path containment, and peer/API/Docker health checks after every attack. Moved actual SIGKILL/restart ESC-20 into test/escape. CI installs the official apt runsc package, registers/restarts Docker, requires runsc, runs integration/escape, and lints security-tagged tests. Fixed cold-cache Docker fixture ID parsing by separating stdout from pull-progress stderr, without changing security assertions. Windows/Linux make check, full runsc integration/escape, tagged lint and static build passed. GitHub check/security jobs passed candidate 36708f9 (https://github.com/brendatamaar/arcana/actions/runs/41578117012); final documentation-only amendment is rechecked in CI. Details: docs/escape-v1.md.
-
-### [x] T1.18 v0.1 docs and release
-- **Deps:** T1.15–T1.17
-- **Do:** README: what it is, security model summary, quickstart (`go install`, gVisor setup, `doctor`, `serve`, first exec), CLI examples, limitations (PRD §12.5). `CHANGELOG.md` entry. Tag `v0.1.0`.
-- **Acceptance:** following the README on a clean Ubuntu VM reaches a first exec.
-- **Verify:** `make check test-integration test-escape`
-
-> Done: Replaced the scaffold README with v0.1 security scope, Ubuntu/gVisor setup, go install, Doctor/serve/first-exec flow, CLI/API examples and honest limitations; consolidated CHANGELOG into the dated v0.1.0 release. Added verbatim marked-README execution with isolated private demo state and bounded cleanup. VPS smoke reached first exec and file round trip; fresh Ubuntu 24.04 GitHub VM quickstart and check/security jobs passed candidate f8c400f (https://github.com/brendatamaar/arcana/actions/runs/41587693910). Windows/Linux make check, full runsc integration/escape and static build passed. The final release commit is the target of annotated tag v0.1.0 after final CI verification; published-module installation is checked after tag push. Validation: docs/release-validation.md. Phase 1 ends here; no blocked tasks or unresolved Phase 1 questions remain.
+### Handoff notes
+- Selesai penuh (T1.1–T1.18), dirilis pada tag `v0.1.0` (`1fd1e0d`), semua CI & escape suite v1 (`ESC-01`–`14`, `ESC-20`, `ESC-21`) hijau di `runsc`.
+- Komponen kunci: `internal/config`, `internal/store`, `internal/auth`, `internal/api`, `internal/runtime/docker`, `internal/helper` (embed static amd64/arm64 `sbx-exec`), `internal/orchestrator`, `internal/stream`, `pkg/client`, `internal/doctor`, `test/escape`.
+- Jebakan/catatan: helper memisahkan transport exit (`0`/`124`/`125`) dari exit code command asli; tmpfs `/workspace` perlu opsi `exec` eksplisit; `make check` wajib memakai `CGO_ENABLED=0` build-safe dan `-race` untuk test.
 
 ---
 
-## Phase 2 — v0.2 Self-hosting ready
+## P2 - Self-hosting ready (v0.2)
+Status: done
+Depends on: P1
+Parallel-safe with: -
 
-### [x] T2.1 Official templates
-- **Deps:** T1.18 · **PRD:** FR-TP-2, FR-TP-4, FR-RL-4
-- **Do:** `templates/{base,python,node,go}/Dockerfile`: slim bases, UID 1000 user `sandbox`, `tar`, `du`, `find`, `coreutils`, `git`, `ca-certificates`; env so package managers install into `/workspace` (venv at `/workspace/.venv` created lazily by a profile script or documented usage, `npm_config_cache=/workspace/.npm`, `GOPATH=/workspace/.go`, `GOCACHE=/workspace/.cache/go`). CI workflow builds multi-arch images and pushes to GHCR on tags; smoke test each image under runsc.
-- **Acceptance:** each template runs `python -m pip install requests` / `npm i lodash` / `go mod download` successfully into `/workspace` with allowlist networking (after T2.4) or offline smoke tests before it.
-- **Verify:** `make templates && make test-integration`
+### Goal
+Menyiapkan Arcana untuk produksi self-hosted: template resmi, warm pool, egress allowlist + proxy terisolasi, audit log, metrics Prometheus/Grafana, rate limiting, escape suite v2, installer, dan dokumentasi operator.
 
-> Done: Added slim base/Python/Node/Go images with UID/GID 1000 and workspace package-manager paths, documented lazy Python venv setup, make templates, offline hardened runsc integration smokes, and multi-arch GHCR release builds gated on smoke tests. make templates, make check, make test-integration and make test-escape passed locally.
-
-### [x] T2.2 Template registry endpoint
-- **Deps:** T2.1 · **PRD:** FR-TP-3
-- **Do:** Config-driven registry, `GET /v1/templates`, validation that template images exist at startup (warn, not fail).
-- **Verify:** `go test ./internal/orchestrator/... ./internal/api/...`
-
-> Done: Added authenticated GET /v1/templates, generated contract and Go client, resolved defaults with environment key names only, independent registry metadata and a tested 1000-template cap. Existing startup Doctor already warns for missing configured images. Task verification and make check passed.
-
-### [x] T2.3 Warm pool
-- **Deps:** T2.2 · **PRD:** FR-LC-10
-- **Do:** Per (template, network mode) pool with target size; background filler with backoff on errors; acquire applies labels and records `source: pool`; pool members labelled and reconciled; pool drained on shutdown when `destroy_on_shutdown`; metrics hooks.
-- **Acceptance:** unit tests for filler/acquire races (`-race`); integration test shows faster acquire than cold create.
-- **Verify:** `go test -race ./internal/orchestrator/... && make test-integration`
-
-> Done: Added bounded fresh-instance pools for configured template/network defaults, serialized filler with capped backoff, immutable-setting cold fallback, quota-safe idle-member eviction, source=pool reservations, runtime pool labels, restart orphan reconciliation, shutdown drain and PoolAvailable metrics hook. Race tests cover acquire/fill, capacity, fallback and cleanup. runsc integration measured 54ms acquire versus 2.09s cold; make check, required race tests, full integration and escape suites passed.
-
-### [x] T2.4 Allowlist networking and egress proxy
-- **Deps:** T0.5, T2.2 · **PRD:** FR-NW-2…7, FR-CL-3
-- **Do:** `internal/netpolicy`: subnet allocator from `subnet_pool` (persisted allocations or derived from Docker state on start), per-sandbox internal network creation and cleanup, proxy container lifecycle (`arcana proxy` using the Arcana image), connecting the proxy to each sandbox network, injecting `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`. Proxy server: `CONNECT` and plain HTTP, per-source-IP allowlist pushed from Arcana (control channel on a local socket or HTTP with a shared secret), DNS resolution then IP range checks, connect to resolved IP, byte counting, decision events back to Arcana. Presets from config. Doctor check for subnet overlap.
-- **Acceptance:** unit tests for allocator and IP range checks (IPv4 and IPv6); integration tests for allowed and denied hosts.
-- **Verify:** `go test ./internal/netpolicy/... && make test-integration`
-
-> Done: Added config/API/CLI allowlists and presets, Docker-derived bounded subnet allocation, isolated per-sandbox runsc proxies, pinned public-IP HTTP/CONNECT forwarding, exec-bridged authenticated Unix control, bounded decision queues, startup restoration/orphan cleanup and subnet diagnostics. Live tests installed requests/lodash/Go modules, denied non-allowlisted/direct egress, preserved peer health and restored access after reconciliation. Network fixtures use separate ranges to keep the new overlap diagnostic meaningful. make proxy-image, task verification, make check and full integration passed. ESC-03 initially failed during concurrent package execution; it passed in isolation and the full escape suite passed with GOFLAGS=-p=1, with every attack and assertion unchanged. Owner-approved durable audit wiring follows in T2.5.
-
-### [x] T2.5 Audit log
-- **Deps:** T2.4 · **PRD:** FR-AD-1, FR-AD-2, FR-FS-6
-- **Do:** Migration for `audit_events`; async buffered writer (never blocks request path; drops with a counter metric if the buffer overflows); events from all listed actions; `GET /v1/audit` with filters and cursor pagination; daily pruning.
-- **Verify:** `go test ./internal/audit/... ./internal/api/...`
-
-> Done: Added bounded asynchronous SQLite audit persistence, credential redaction, action/egress attribution, admin filters and timestamp/ID cursors, startup/daily pruning, local-key CLI recording and Go client support. File size metadata is produced inside the sandbox. Audit/API verification, make check, tagged security lint and full serial integration/escape suites passed (audit coverage 86.5%). Owner-approved ESC-03 cgroup usage/quota/throttling checks preserve the attack, CPU ceiling and peer-health bounds; no resource defaults changed.
-
-### [x] T2.6 Metrics, dashboard and Compose
-- **Deps:** T2.3, T2.5 · **PRD:** §15, NFR-OPS-2
-- **Do:** `internal/metrics` with all PRD §15 metrics on `metrics_listen`; `deploy/grafana/arcana.json`; `deploy/compose/docker-compose.yml` with Arcana (host Docker socket mounted), Prometheus and Grafana with provisioning.
-- **Acceptance:** `docker compose up` shows populated dashboard after running a few execs.
-- **Verify:** `go test ./internal/metrics/...`; manual Compose check noted in PR.
-
-> Done: Added all PRD collectors plus audit-loss counters on the separately owned metrics listener, bounded route/outcome labels, live SQL/pool gauges and middleware preserving WebSocket/shutdown behavior. Added digest-pinned Prometheus/Grafana Compose provisioning and a temporary-stack smoke script; real exec samples reached Prometheus and Grafana datasource/dashboard queries. Metrics verification (87.8% coverage), make check, full integration and escape suites passed. Validation: docs/compose-validation.md.
-
-### [x] T2.7 Quotas and rate limiting
-- **Deps:** T2.3 · **PRD:** FR-AU-6
-- **Do:** Per-key token bucket for sandbox creation; `rate_limited` errors with `Retry-After`.
-- **Verify:** `go test ./internal/api/...`
-
-> Done: Added configurable per-key creation token buckets (default 30/min), continuous refill, bounded fail-closed 10000-key state with idle reclamation, rate_limited/Retry-After responses and Go client retry-delay metadata without mutation retries. Tests cover independent keys, refill/backwards clocks, concurrent admission, state bounds, auth precedence and no DB/runtime reservation on denial. Task verification, make check, full serial integration and escape suites passed. User-requested stopping point reached; T2.8 onward remains unstarted.
-
-### [x] T2.8 Escape suite v2 (network)
-- **Deps:** T2.4 · **PRD:** §12.4 ESC-15…19
-- **Do:** Implement network escape tests; add to CI.
-- **Verify:** `make test-escape`
-
-> Done: Added public REST/WebSocket attacks for ESC-15–19 with real runsc proxies, persisted denial audits, a controlled DNS upstream changing a public A answer to loopback, and a live peer listener verified on its own interface. Each attack checks API, peer and Docker health. CI runs the full v1/v2 suite. make check, tagged escape lint, and full serial integration/escape suites passed.
-
-### [x] T2.9 Releases and installers
-- **Deps:** T2.6
-- **Do:** `.goreleaser.yaml` (linux amd64/arm64, `CGO_ENABLED=0`, checksums, `.deb`/`.rpm` via nfpm, Arcana container image to GHCR, changelog); release workflow on tags; `scripts/install.sh` (POSIX sh, arch detection, checksum verification, config install, optional systemd unit, runs `doctor`); `deploy/systemd/arcana.service` with hardening directives compatible with Docker socket access. Test `install.sh` with `shellcheck` in CI.
-- **Acceptance:** a pre-release tag produces all artifacts; install script works on a fresh Ubuntu VM.
-- **Verify:** `goreleaser release --snapshot --clean` locally; `shellcheck scripts/install.sh`
-
-> Done: Added `.goreleaser.yaml` (linux amd64/arm64 static builds, checksums, deb/rpm, GHCR image via `dockers_v2`), tag release workflow, CI shellcheck and snapshot jobs, `scripts/install.sh` and a hardened `arcana.service`. Verified locally: snapshot release produced all artifacts; `shellcheck` clean; install.sh in a fresh Ubuntu 24.04 container installed and rejected a tampered archive; the deb installed the user/data dir. **Not verified:** a real pre-release tag, GHCR push, and `--systemd`/doctor on a real systemd VM; both run in the release workflow (`install-smoke`) on the first tag, which is T2.11.
-
-### [x] T2.10 Docs for self-hosters
-- **Deps:** T2.9
-- **Do:** `docs/` pages: install (each channel), configuration reference (generated from the config struct or hand-maintained and checked by a test that every key is documented), security model and limitations, networking, operations (upgrades, backups of `data_dir`, logs, metrics).
-- **Verify:** docs build (see T3.8) or Markdown lint in CI.
-
-> Done: Added `docs/install.md`, `configuration.md`, `security.md`, `operations.md` (networking already existed). `TestEveryConfigKeyIsDocumented` walks the config struct's koanf tags and fails on any undocumented key. Markdown lint (`markdownlint-cli2`, config in `.markdownlint-cli2.yaml`) is clean locally and runs in CI. The config loader ignores unknown keys; documented as such rather than changed. README still describes allowlist networking, metrics and installers as later work; T2.11 updates it.
-
-### [x] T2.11 v0.2 release
-- **Deps:** T2.1–T2.10
-- **Do:** Update README and CHANGELOG; tag `v0.2.0`.
-- **Verify:** `make check test-integration test-escape`; release workflow green.
-
-> Note: CI first failed in `TestAllowlist_ProxyAllowedDeniedAndIsolation` after `Reconcile`. Cause: Docker 28.0.4 (runner) ignores `MacAddress` on `NetworkConnect`, so the recreated proxy got a new MAC and sandbox neighbour caches went stale (Docker 29 locally honours it). Fixed by setting the stable MAC/IP in the container-create `NetworkingConfig` (with the `bridge` endpoint listed explicitly) and failing closed if Docker does not apply them. README/CHANGELOG updated. The first tag run failed because the release job lacked golangci-lint (fixed in 15a49e8); the unreleased tag was moved to that commit. Release `v0.2.0` published with archives, deb/rpm, checksums and install.sh; Release (including install-smoke), CI and Template images workflows green on the tag. Done.
+### Handoff notes
+- Selesai penuh (T2.1–T2.11), dirilis pada tag `v0.2.0` (`15a49e8`) dengan artefak GoReleaser (deb/rpm/tarball/GHCR) dan `scripts/install.sh`.
+- Komponen kunci: `templates/{base,python,node,go}`, `internal/netpolicy` (subnet allocator + dedicated `runsc` proxy per sandbox), `internal/audit`, `internal/metrics`, `deploy/{compose,grafana,systemd}`, `ESC-15`–`19`.
+- Jebakan/catatan: Docker 28 mengabaikan `MacAddress` pada `NetworkConnect`, sehingga IP/MAC proxy wajib ditetapkan saat container create; `make test-escape` perlu dijalankan serial (`GOFLAGS=-p=1`) pada host kecil agar `ESC-03` tidak terpengaruh beban paralel.
 
 ---
 
-## Phase 3 — v0.3 Agent ecosystem and showcase
+## P3 - Agent ecosystem & showcase (v0.3)
+Status: done
+Depends on: P2
+Parallel-safe with: -
 
-### [x] T3.1 Snapshots, restore and fork
-- **Deps:** T2.11 · **PRD:** FR-SN-1…5
-- **Do:** Migration for `snapshots`; snapshot by streaming `tar -czf - -C /workspace .` through exec into `data_dir/snapshots/<id>.tar.gz` with SHA-256; `from_snapshot` create path (extract inside sandbox); fork N in parallel with `errgroup` and partial-failure reporting; limits; endpoints; Go client and CLI support (`arcana snapshot create|list|rm`, `arcana fork`).
-- **Acceptance:** integration test: install a package into `/workspace`, snapshot, fork 3, package present in each, changes in one fork invisible to others.
-- **Verify:** `make test-integration`
+### Goal
+Menambahkan ekosistem agent dan showcase v0.3: snapshot & parallel fork, MCP server, SDK Python & TypeScript, reference fix-agent, benchmark harness, dashboard React read-only, situs docs VitePress, dan devcontainer.
 
-> Done: Added the `snapshots` migration/queries, `snapshots.*` config, OpenAPI endpoints (create/list/get/delete/fork, `from_snapshot`), orchestrator snapshot/restore/fork, Go client, and `arcana snapshot create|list|rm`, `arcana fork`, `sandbox create --from-snapshot`. Archives are streamed through exec into `data_dir/snapshots` (0600) with SHA-256, verified again on the streamed descriptor before in-sandbox extraction; count/byte budgets are reserved before streaming; failed restores destroy the sandbox (`restore_failed`); startup reconciliation prunes `.part`/unrecorded files. Fork reports per-index failures, charges one creation token per member and cleans up on disconnect. A unit test found a real race (exec transport closing stdin while the copy loop was still reading an `os.File`), fixed in `archiveInput`. Integration test on real runsc installs a package into a `/workspace` venv, snapshots, forks 3, checks the package in each, isolation between forks, corrupt-archive rejection and deletion. Hash-check mutation was caught by tests. make check, full serial make test-integration and make test-escape passed. Fork/list/get request shapes were not specified in PRD §10; defined there and in the Decision log. `web-check` not applicable before T3.7.
-
-### [x] T3.2 MCP server
-- **Deps:** T3.1 · **PRD:** FR-MC-1…3, FR-CL-4
-- **Do:** `internal/mcp` with the official MCP Go SDK, stdio transport, tools listed in PRD, session labelling and cleanup. Docs with a config snippet for MCP clients (for example Claude Desktop or Claude Code).
-- **Acceptance:** tests using the SDK's in-memory client transport for each tool; manual test with a real MCP client noted in PR.
-- **Verify:** `go test ./internal/mcp/...`
-
-> Done: Added `internal/mcp` (official Go SDK v1.8.0) with the eight PRD tools, limits stated in descriptions, bounded replies (64 KiB per stream, 1 MiB file reads/writes), Arcana error codes without request internals, and `mcp_session=<id>` labelling with cleanup of unkept sandboxes/forks when the session ends. `arcana mcp` serves stdio (frame cap 4 MiB; logs to stderr). Tests use the SDK's in-memory client transport for every tool, a CLI pipe test, and a runsc integration test drives all tools through the real API (session label, snapshot/fork, cleanup). Docs and client config snippets in docs/mcp.md. **Not done:** a manual run with a real third-party MCP client (Claude Desktop/Code) — none is available in this environment; the SDK's own client was used instead.
-
-### [x] T3.3 Python and TypeScript SDKs
-- **Deps:** T3.1 · **PRD:** FR-SD-2
-- **Do:** `sdk/python` and `sdk/typescript` generated from `api/openapi.yaml` (choose generators and record in an ADR), plus hand-written streaming exec wrappers and README examples; CI job running each SDK's tests against a live Arcana with runc.
-- **Verify:** SDK test commands documented in each SDK README; CI green.
-
-> Done: Added `sdk/typescript` (openapi-typescript + openapi-fetch, `ws` for streaming; Node >=18; `node --test`) and `sdk/python` (openapi-python-client 0.30.0 pinned with ruff, httpx2/attrs at runtime, `websockets` for streaming; Python >=3.11; `unittest`), each a generated layer plus a hand-written wrapper for exec (argv/shell, stdin), WebSocket streaming exec (binary-safe, stdin framing, resize, cancel), raw file/archive transfer, snapshot/fork (partial failures returned), admin and typed errors. Unit tests run against in-process fake HTTP/WebSocket servers and found two real bugs (unhandled rejection on a pre-start error frame; output lost between `started` and handler registration). `scripts/with-arcana.sh` starts a throwaway Arcana; the live tests of both SDKs passed against it on runsc. `make sdk-generate`/`sdk-verify-generated` (idempotent, verified) and `make sdk-test` added; ADR 0005 records the choices; the owner approved the dependencies. **Not verified:** the new CI `sdk` job (runc, Node 22) has not run on GitHub yet, and the SDKs were tested locally on Node 18 and Python 3.12 only. The Python generator omits the `application/gzip` archive endpoints, which the wrapper implements by hand.
-
-### [x] T3.4 Reference agent and fixtures
-- **Deps:** T3.2 · **PRD:** FR-SD-3, FR-SD-4
-- **Do:** `examples/fix-agent` (Go): OpenAI-compatible chat client (base URL, model, key from env; default `http://localhost:11434/v1` for Ollama), tool loop with `run_command`, `read_file`, `write_file`, `list_files`; step and token budgets; stops when hidden tests pass. `--parallel N` mode using snapshot + fork. `examples/fixtures/` with 10 small buggy projects and hidden tests. `make eval-agent` prints a results table.
-- **Acceptance:** agent runs end-to-end on at least one fixture with a local model; results recorded in `docs/agent-results.md` including failures.
-- **Verify:** `go test ./examples/fix-agent/...`; manual eval run.
-
-> Done, with one acceptance item **still open**: the agent has not been run with a real local model, and `docs/agent-results.md` records no model results (none exist). The owner chose to build everything and leave that run pending (2026-11-12); see Open questions. Built: `examples/fix-agent` (OpenAI-compatible client with tool calling, tool loop with step/token budgets and bounded tool output, hidden-test judge that places and removes hidden tests between turns, `--parallel N` snapshot+fork mode with first-pass cancellation and guaranteed cleanup, `run`/`eval`/`verify-fixtures`), 10 fixtures (4 Python, 3 Node, 3 Go) and `make eval-agent`. Unit tests use a scripted model and fake Arcana; integration tests on runsc verified all 10 fixtures (visible and hidden fail before, pass with the reference solution) and ran the agent end to end against a *scripted* OpenAI-compatible server (3 fixtures single-attempt, 1 in parallel mode, nothing left behind). Verification found that `/tmp` is noexec, so Go fixtures set `GOTMPDIR` (noted in templates/README.md). Hidden tests are never in the model's view.
-
-### [x] T3.5 Benchmark harness
-- **Deps:** T3.1 · **PRD:** §8.2, FR-CL-5
-- **Do:** `arcana bench` scenarios: cold create, pool acquire, exec overhead, density (create until limits), snapshot and fork times; outputs JSON and Markdown; `docs/benchmarks.md` with results versus targets and host details; charts generated by a small script.
-- **Verify:** `go run ./cmd/arcana bench --scenario all --out bench/results`
-
-> Done: Added `internal/bench` (cold-create, pool-acquire, exec-overhead, density, snapshot/restore/fork; nearest-rank percentiles; PRD §8.2 verdicts; guaranteed cleanup) and `arcana bench` writing results.json and results.md, `scripts/bench_charts.py` (stdlib SVG), and `docs/benchmarks.md` with a real run against a live Arcana on runsc. Unit tests use a fake clock and API. Results on this 2 vCPU/1.9 GB shared VM (not the reference host): cold create p50 206 ms, pool acquire p50 5.6 ms, exec p50 94 ms (narrowly met), all within target. **Density was not measured to its target:** capped at 12 sandboxes to protect the VM, so the 20-sandbox target is neither confirmed nor refuted; the harness reports capped runs as "not measured" rather than a miss. Single run, small samples; a rerun on the reference host is still needed for published claims. A first run's `results.json` was hand-patched and discarded; the recorded one is a clean rerun.
-
-### [x] T3.6 Dashboard backend support
-- **Deps:** T3.1 · **PRD:** FR-WD-4…8, FR-AU-1, §11 (`sessions`), ESC-22, ESC-23
-- **Do:**
-  - Migration for `sessions`. In `internal/auth`: create, verify and revoke sessions (token hashed, TTL, invalid once the key is revoked, debounced `last_seen_at`); `POST /v1/sessions` sets the cookie per FR-WD-4; `DELETE /v1/sessions/current` clears it.
-  - Auth middleware: cookie accepted only for `GET`/`HEAD` and session logout, otherwise `403 forbidden`; `Origin` / `Sec-Fetch-Site` check on every cookie-authenticated request.
-  - `internal/events`: in-process pub/sub with bounded per-subscriber buffers (slow subscriber → `reset` event and disconnect), ring of the last `ui.event_buffer` events for `Last-Event-ID` resume, filtering by owner. Orchestrator publishes lifecycle, exec and pool events.
-  - Per-exec output ring buffers fed by both sync and streaming exec paths, kept `tail_retention_seconds` after exit, subscriber cap.
-  - SSE handlers for `/v1/events` and exec output (heartbeat comment every 15 s, flush per event, stop on context cancel). `GET /v1/overview` and `GET /v1/sandboxes/{id}/execs`.
-  - OpenAPI spec, generated code, `pkg/client` methods (events and output tail) and metrics (`ui_sessions_active`, `event_subscribers`).
-- **Acceptance:** unit tests for session lifecycle, cookie method restriction, origin checks, bus fan-out, backpressure and resume, ring buffer wrap and retention; ESC-22 and ESC-23 implemented and passing; sandbox output is still never written to disk.
-- **Verify:** `make generate verify-generated && go test -race ./internal/auth/... ./internal/events/... ./internal/api/... && make test-escape`
-
-> Done: Added the `sessions` migration and queries, cookie sessions in `internal/auth` (hashed tokens, TTL, revoked-key invalidation, 20 per key; pure `decideCookie` policy: GET/HEAD and logout only, same-origin proof via Origin/Sec-Fetch-Site, bearer wins over cookie), `POST /v1/sessions` and `DELETE /v1/sessions/current`, `internal/events` (bus with resume, reset and slow-subscriber drop; bounded in-memory output rings with retention and reader caps), orchestrator publishing of lifecycle, exec and pool events plus ring feeding, SSE `/v1/events` and exec output tail, `/v1/overview` and exec history, OpenAPI/generated code, Go client (`Events`, `ExecOutput`, `ListExecs`, `GetOverview`), live `ui_sessions_active`/`event_subscribers` gauges, `ui.*` and `limits.exec.tail_*` config with docs, and docs/events.md. ESC-22 and ESC-23 pass on runsc through the public API; a mutation that let cookies authorize any method failed both them and the unit tests. Sandbox output is never written to disk. The work also found and fixed a latent bug: `exec.started` audit events for shell execs were silently dropped (the raw shell string was embedded as invalid JSON); regression test added. Verified: make check, and the full serial `make test-integration` and `make test-escape` suites passed. Not done: session create/logout methods in the Go client (browser-only).
-
-### [x] T3.7 Dashboard frontend (React)
-- **Deps:** T3.6 · **PRD:** FR-WD-1…3, FR-WD-9…11, ESC-24, §8.2
-- **Do:**
-  - `web/`: React + TypeScript + Vite app managed with pnpm. Typed API client generated from `api/openapi.yaml` with `openapi-typescript` and called through `openapi-fetch`. TanStack Query for server state, React Router for routes under `/ui`, Tailwind CSS for styling.
-  - Pages per FR-WD-2: Login, Overview, Sandboxes, Sandbox detail. Live updates through `EventSource` on `/v1/events`, with reconnect and query-cache updates; full refetch on `reset`.
-  - Log viewer: subscribes to the exec output stream, parses ANSI colours into styled spans (never HTML), virtualised rendering for large output, auto-scroll that pauses when the user scrolls up.
-  - Vite builds straight into `internal/webui/dist/` (git-ignored except `.gitkeep`). `internal/webui` embeds it, serves `/ui` with the FR-WD-9 headers and SPA fallback, and shows the FR-WD-10 placeholder when the build is absent.
-  - Make targets `web`, `web-dev` (Vite dev server proxying `/v1` to a local Arcana), `web-generate`, `web-check`, `web-e2e`, `build-all`. CI job for the web checks; GoReleaser `before` hook runs `make web`.
-- **Acceptance:** Vitest + React Testing Library tests for each page against mocked API responses (MSW), including ESC-24; Go tests for `internal/webui` headers, fallback and placeholder; Playwright smoke test against a real Arcana in CI (runc) that logs in, sees a new sandbox appear and watches an exec's output live with zero CSP violations; initial JavaScript ≤ 200 KB gzip.
-- **Verify:** `make web-check && make build-all && go test ./internal/webui/... && make web-e2e`
-
-> Done: Added `web/` (React 19, TypeScript strict, Vite 7, Tailwind 4, React Router 7, TanStack Query and Virtual, generated `openapi-fetch` client) with Login, Overview, Sandboxes (filters, pagination, live patching) and Sandbox detail (spec, TTL/idle countdowns, state history, command history, live ANSI log viewer that is virtualised, memory-bounded and pauses auto-scroll when the user scrolls up); `internal/webui` (embedded, FR-WD-9 headers verbatim, SPA fallback, hashed-asset caching, placeholder when built without the frontend); `/ui` mounted outside auth; `GET /v1/sandboxes/{id}/history` (needed by FR-WD-2, see Decision log); Make targets `web`, `web-dev`, `web-generate`, `web-check`, `web-e2e`, `build-all`; a CI `web` job; a GoReleaser `make web` hook with Node in the release and snapshot workflows. 69 Vitest/RTL/MSW tests incl. ESC-24 for the log viewer, every view that shows sandbox data and error messages; a deliberate `dangerouslySetInnerHTML` mutation failed the test. Initial JavaScript is 112 KB gzip (budget 200). The Playwright smoke test (login, a sandbox appearing live, an exec's output arriving while it runs, markup staying inert, zero CSP violations, read-only UI, logout, security headers) passed in real Chromium against a live Arcana on runsc. That run found a real bug the unit tests missed, an `EventSource` reconnect loop caused by an unstable default factory; fixed, with regression tests verified to fail on the old code. **Not verified:** the new CI `web` job (runc, `playwright install --with-deps`) has not run on GitHub; local runs used Node 22.23 installed under the scratchpad with Chromium libraries unpacked from .debs because the host has Node 18 and no root. Light and dark themes and phone width follow Tailwind's responsive and `prefers-color-scheme` utilities but were not visually reviewed in a browser here (screenshots belong to T3.8).
-
-### [x] T3.8 Docs site and recordings
-- **Deps:** T3.4, T3.5, T3.7
-- **Do:** VitePress site in `docs/` published to GitHub Pages by a workflow; VHS tapes in `docs/tapes/` for quickstart, parallel fork demo and doctor; a short screen recording of the dashboard during the parallel fork demo; README embeds the quickstart GIF and a dashboard screenshot; architecture page with diagrams from the PRD.
-- **Verify:** docs workflow green; site renders.
-
-> Done: Added a VitePress site in `docs/` (home, quickstart, SDKs, architecture, decision index, curated sidebar, local search; PRD/PLAN/AGENTS stay out of it; dead links fail the build), a Pages workflow (`.github/workflows/docs.yml`) and a CI `docs` build job. Three VHS tapes (`docs/tapes/`: doctor, quickstart, snapshot-and-fork) were recorded against a real Arcana on runsc and the GIFs are committed, as are a dashboard screenshot and a recording of the dashboard while three parallel forks work (`scripts/record-dashboard.mjs`, Playwright); `scripts/record-tapes.sh` regenerates the GIFs. The README embeds the quickstart GIF and the dashboard screenshot; the site embeds all recordings. The site built locally and its pages were checked in a browser. **Not verified:** the Pages deployment itself (needs the push and Pages enabled in the repository settings), so "docs workflow green" is untested. **Deviation:** the dashboard recording shows the snapshot-and-fork demo driven through the API, not the LLM fix-agent's `--parallel` mode, because no real model was available (see T3.4's open item). Recordings used a headless Chromium with its sandbox disabled, on this host only (unprivileged user namespaces are off), to render our own local terminal page.
-
-### [x] T3.9 Devcontainer
-- **Deps:** T3.8 · **PRD:** §14
-- **Do:** `.devcontainer/` with Docker-in-Docker, Node LTS and pnpm for dashboard work, and an attempt to configure runsc; fall back to runc with `allow_insecure_runtime` and a loud banner if runsc fails. Document results.
-- **Verify:** manual Codespaces check noted in PR.
-
-> Done: Added `.devcontainer/` (devcontainer.json with Docker-in-Docker, Go, Node LTS, Python 3.12; pnpm via corepack in `post-create.sh`; ports 7070/9090 forwarded) and `setup-runtime.sh`, which installs and registers runsc, proves it with `docker run --runtime=runsc`, and otherwise writes a dev-only config with `oci_runtime: runc` + `allow_insecure_runtime: true` and a banner printed on creation, every start and every new terminal. Documented in `docs/devcontainer.md` (added to the docs sidebar). Checked locally: script syntax, JSON validity, forced-runc and detect-only paths, and that `arcana serve` accepts the generated config and logs the insecure-runtime warning. **Not verified:** a real Codespaces creation (the Verify step needs one, and whether runsc works there is unknown), the apt-based gVisor install path (this host already has runsc), and shellcheck (not installed here).
-
-### [x] T3.10 v0.3 release
-- **Deps:** T3.1–T3.9
-- **Do:** README polish (recording, dashboard screenshot, benchmark highlights, security summary), CHANGELOG, tag `v0.3.0`; confirm release binaries include the dashboard.
-- **Verify:** all CI workflows green; `/ui` loads from a downloaded release binary.
-
-> Done: README (v0.3 summary, performance highlights with the untested density target stated plainly, dashboard security summary, devcontainer link), CHANGELOG `[0.3.0] - 2026-11-12`, and the `v0.3.0` tag pushed with owner approval (2026-11-12). The first CI run on the release commit failed for three real reasons, all fixed before tagging: (1) CI's corepack resolved pnpm 12, whose minimum-release-age policy rejected lockfile entries published within the last day — pnpm is now pinned to 10.34.9 via `packageManager` in `web/`, `docs/` and `sdk/typescript/` (lockfiles unchanged, no policy disabled); (2) the committed SDK layers were stale after T3.5–T3.7 added endpoints, which `make check` does not catch — regenerated; the TypeScript `test` script also passed a directory to `node --test`, which Node 22 does not expand — now a glob; (3) gosec G124 in the escape-test lint job (escape build tag) — suppressed with a reason on the test's request cookie. CI on `d65b1ee` is green in all eight jobs (check, shellcheck, markdown, sdk, docs, web, goreleaser, security with runsc). The Release workflow succeeded and published archives, deb/rpm for amd64 and arm64, checksums and `install.sh`; the downloaded amd64 archive passed its checksum, reports `arcana 0.3.0 (commit d65b1ee)`, and served the dashboard at `/ui/` with the FR-WD-9 CSP. **Not verified or not working:** GitHub Pages deployment — the Docs workflow's build passes but `deploy-pages` returns 404 because Pages is not enabled in the repository settings (an owner action: Settings → Pages → Source: GitHub Actions; re-run the Docs workflow afterwards). The tag-triggered `CI` and `Template images` runs also succeeded. The GHCR image and the arm64 artifacts were not pulled or run.
+### Handoff notes
+- Selesai penuh (T3.1–T3.10), dirilis pada tag `v0.3.0` (`d65b1ee`); 8 job CI hijau (check, shellcheck, markdown, sdk, docs, web, goreleaser, security `runsc`).
+- Komponen kunci: `internal/mcp`, `sdk/{python,typescript}`, `examples/fix-agent`, `internal/bench`, `internal/events`, `web/` + `internal/webui`, `docs/` (VitePress + VHS tapes), `.devcontainer/`.
+- Catatan `OPEN` non-blocking tersisa:
+  - `T3.4`: `make eval-agent` belum pernah dijalankan dengan model LLM lokal nyata (baru scripted server); `docs/agent-results.md` belum berisi hasil model nyata.
+  - `T3.8`: deployment GitHub Pages butuh aktivasi manual di Settings → Pages → Source: GitHub Actions.
+  - `T3.9`: devcontainer belum diuji langsung di GitHub Codespaces (hanya cek lokal).
+  - `T3.5`: benchmark density dibatasi 12 sandbox pada VM 2 vCPU/1.9 GB; butuh rerun di reference host tenang.
 
 ---
 
-## Phase 4 — Stretch
-
-### [x] T4.1 `envd` in-sandbox daemon
-- **Deps:** T3.10 · Evolve `sbx-exec` into a gRPC daemon (exec, files, streaming, signals) usable over Unix socket or vsock. ADR required.
-
-> Done: Added `cmd/envd` and `internal/envd`: a gRPC daemon (`envd.proto`, package `arcana.envd.v1`) with streaming `Exec` (stdin, TTY, resize, cancel, disconnect cancels), `Signal`, and `WriteFile`/`ReadFile`/`ListFiles`/`RemoveFile`/`MakeDirectory`, over a 0600 Unix socket or host-only (CID 2) raw `AF_VSOCK`. It re-runs itself as the unchanged `sbx-exec` controller per exec, so subreaper/pidfd cleanup and the completion proof still apply (an unproven exit is `DATA_LOSS`), and runs file operations in child processes as the sandbox user after path validation. To share the code, the helper moved to `internal/sbxexec`; `sbx-exec` is a thin `main`, behaves the same, and its embedded binaries were rebuilt. Writing the tests found a real bug in the new file path (an oversized upload committed the bytes received before the limit, replacing the old file); fixed, and `sbx-exec write` now removes its temporary on SIGTERM so abandoned uploads leave nothing. Verified: `make check` (envd coverage 80.5%), unit tests against a real daemon, two guard mutations caught (completion proof, abort-on-bad-upload), and `make test-integration` and `make test-escape` (serial) pass, including a probe running inside fully hardened containers under **runsc and runc** (exit codes, `setsid` descendants reaped on timeout and cancel, TTY size, symlink to `/etc/passwd` resolving to the sandbox's file, traversal rejected, runs as UID 1000). ADR 0006 records the design. **Not verified:** a real microVM or any vsock traffic from a host (no `/dev/kvm`; only the peer policy is unit-tested), and `--user` privilege drop with the daemon running as root. Nothing in Arcana uses `envd` yet; embedding/installing it is T4.2. The local integration suite needs `make templates` and `make proxy-image` first.
-
-### [x] T4.2 Firecracker driver
-- **Deps:** T4.1 · `internal/runtime/firecracker` with `firecracker-go-sdk`: rootfs images built from templates, tap networking, vsock to envd, memory snapshots. Skipped in tests when `/dev/kvm` is absent.
-
-> Done, **never run on KVM** (owner chose "build it, mark unverified", 2026-11-15; this host has no `/dev/kvm`, Firecracker or jailer): added `internal/runtime/firecracker` (a `runtime.Driver`: pure VM planning and limits, jailer-by-default launch with `allow_unjailed` for development only, a stdlib client for Firecracker's REST API, the host-side vsock `CONNECT` handshake, an `envd`-backed `ExecSession` with TTY/resize/cancel, per-VM sparse ext4 workspace images, persisted metadata so a restarted driver can list, adopt and destroy VMs), `cmd/arcana-init` (guest PID 1: mounts, `RLIMIT_NPROC`/`NOFILE` limits, loopback, starts `envd` as UID 1000, powers off when it ends), `scripts/build-rootfs.sh` (template image to read-only ext4, captures the image ENV, installs `envd` and an `sbx-exec` link) and `make arcana-init`. Verified: `make check` and unit tests (driver coverage 80.2%) that run the whole driver against a fake VMM serving the Firecracker API with a real `envd` behind a vsock proxy (unjailed and jailed layouts, exec/stdin/TTY, stats, destroy, failed-boot cleanup, adoption by a second driver, env never persisted), API call order and bodies, handshake edge cases, a real `mke2fs` workspace image owned by UID 1000, and two guard mutations caught (operator kernel args overriding `arcana.*`, a writable root drive). `TestRealFirecracker` (tag `integration`) skips with a reason when `/dev/kvm` or `ARCANA_FC_*` is missing. **Deviations and gaps:** the SDK was not used (see Decision log); only network mode `none`; memory snapshots not implemented; the driver is not wired into `arcana serve`/doctor/reconcile (`runtime.driver` still accepts only `docker`); the guest init, jailer layout and cgroups, hard-link staging, privilege drop with `envd` as root, and vsock from a real host are unverified. See ADR 0007 and Open questions.
-
-### [x] T4.3 Runtime comparison
-- **Deps:** T4.2 · Benchmarks and escape suite across runc, runsc and Firecracker; blog-ready write-up in `docs/runtime-comparison.md`.
-
-> Done, **without Firecracker** (owner chose runc/runsc numbers only, 2026-11-15; no KVM host, and the driver is not selectable through Arcana): `docs/runtime-comparison.md` with raw results in `docs/benchmarks/runtime-comparison/`. `arcana bench --scenario all` ran on runc and runsc, twice each in opposite order, on a 2 vCPU shared VM that was heavily loaded (load average 5 to 8) and is a different machine from T3.5's. Robust findings: restore and forks are 2 to 5 times slower on runsc, exec of `true` is about 20 to 25 percent faster on runsc, pool acquire is the same; cold create is unresolved (equal in run 1, 43 percent slower on runsc in the noisier run 2); exec missed the 100 ms target on both runtimes, which is a statement about this host under load; density was capped at 12 and tells nothing. The escape suite was also run on runc through a new comparison-only `ARCANA_ESCAPE_RUNTIME=runc` (default runsc unchanged, security CI refuses it): **it passes on runc**, because it tests Arcana's hardening and cleanup rather than kernel exploits, and the write-up says so instead of presenting it as a runc safety result. Firecracker has an explicit "not measured" section with the steps to measure it. Verified: markdownlint and the docs build, `make check`, and the default runsc `make test-escape`.
-
-### [x] T4.4 Full web dashboard
-- **Deps:** T3.10 · Extend the v0.3 React dashboard with write actions (create from template, destroy, keepalive), key management, snapshots and the audit view. Cookie sessions would then authorize mutations, so add CSRF protection (synchronizer or double-submit token plus the existing `Origin` checks) and extend the escape suite. ADR required before any write action ships.
-
-> Done (owner chose the synchronizer-token design and key safeguards, 2026-11-15; ADR 0008): the dashboard now creates sandboxes from a template, keeps alive, snapshots and destroys them, lists, forks and deletes snapshots, and, for admin sessions, manages API keys and shows the audit log. Backend: `classifyRoute` makes cookie reach an allowlist of dashboard routes (exec, the exec stream, files and archives never accept a cookie); writes need a matching `Origin` (no `Sec-Fetch-Site` fallback) and the session's CSRF token (`X-CSRF-Token`, an HMAC of the stored token hash, so a reloaded page can fetch it again without a new column); key create/revoke also need the admin key re-entered (`X-Arcana-Reauth`, must be the session's own admin key); each cookie write records a `session.write` audit event. `POST /v1/sessions` returns `csrf_token` and `admin`, and `GET /v1/sessions/current` is new (OpenAPI, generated code, web types and both SDK layers regenerated). **Found while designing it: the v0.3 rule "any GET with a same-origin cookie" reached the WebSocket exec stream and file reads** (confirmed on the old code: the stream handler answered instead of 403). Not exploitable cross-site, but same-origin script could; the allowlist closes it (ESC-26). Frontend: Create sandbox, detail actions with in-page confirmation, Snapshots, Keys (secret shown once and kept nowhere, admin key never stored) and Audit pages, nav gated on `admin`, CSRF token held in memory only. Verified: 95 Vitest/RTL/MSW tests incl. hostile data in every new view, regression tests for two bugs found by running it (a navigation dropped when the sandbox turned `destroyed` mid-request; the one-time secret clearing on re-render), `make check`, `make web-check` (117.0 KB gzip), docs build and markdown lint, ESC-22/23 unchanged plus new **ESC-25 to ESC-27** on runsc, two guard mutations caught (token check always true; exec made a writable route), full serial `make test-integration` and `make test-escape`, and the Playwright smoke suite (4 tests, stable over 3 runs) in real Chromium against a real Arcana, which also attempts forged writes from the page (no/wrong token, exec, file read: all 403). Also fixed: the log viewer jumped to the newest history row, which can be the server's own workspace scan. **Not done:** a step-up for writes other than key management; token rotation inside a session; visual review of the new pages in light/dark and at phone width (no screenshots taken). The CI `web` job has not run on GitHub with these changes.
-
-### [x] T4.5 containerd driver
-- **Deps:** T3.10 · Direct containerd client driver with runsc shim; compare with Docker driver.
-
-> Done, **never run against a real containerd** (owner approved the dependency and chose "build unverified", 2026-11-15; this host's containerd socket is root-only and sudo needs a password): added `internal/runtime/containerd` (a `runtime.Driver` on the containerd v2 client with the runsc shim by default; runc needs the same opt-in as with Docker). The driver logic is separate from a narrow engine interface, and tests assert that the OCI spec it writes gives the same guarantees as the Docker driver (UID 1000, no_new_privs, empty capabilities, read-only root, memory with swap equal to memory, CPU and PID limits, NOFILE, tmpfs `/tmp` `/run/sbx` `/workspace`, and the read-only helper as the only host path), plus create/exec/stats/list/destroy, cleanup after a failed create and installation filtering against a fake engine. Unit coverage is 43.4%, below the 70% target, because the production engine is the part that cannot be exercised. **Gaps:** network mode `none` and tmpfs workspaces only (`allowlist` and `volume` return `Unsupported`); not wired into `arcana serve`; container creation, IO draining, metrics decoding and snapshot cleanup are compile-checked only. The "compare with the Docker driver" part is a written design comparison in ADR 0009 with no measurements. New dependency: `github.com/containerd/containerd/v2` (module graph 314 to 455 entries; the `arcana` binary is unchanged because nothing imports the package yet).
-
-### [x] T4.6 Helm chart
-- **Deps:** T3.10 · Single-node chart with privileged access to the node's container runtime, documented trade-offs.
-
-> Done (first as a unit-checked chart, then **verified on a real kind cluster, see the follow-up below**): added `deploy/helm/arcana` (Chart, values, `values.schema.json`, ConfigMap, Deployment, Service, optional NetworkPolicy, `helm test` pod, NOTES), `docs/kubernetes.md` with the trade-offs, `scripts/check_helm.py` / `make helm-check` and a CI `helm` job. It is one Deployment, one replica, `Recreate`, pinned to a node by `nodeName`, running as a non-root user with a read-only root, all capabilities dropped, no privilege escalation, the default seccomp profile and no API token; the only hostPaths are the Docker socket (a `Socket` mounted at its own path, group access through `supplementalGroups`, a root group refused) and the data directory (an existing `Directory` mounted at the **same path** because Docker bind-mounts the helper using the node's path; `/` refused). The chart pins `data_dir`, listen addresses, the Docker host and `destroy_on_shutdown`, defaults the egress proxy to its own image, refuses runc without the explicit opt-in, and restarts the pod when the config changes. Verified with helm 3.19 and kubeconform 0.8 (checksum-checked downloads): lint, schema validation of the rendered objects, assertions on the rendered manifests, 9 refusals (missing node or socket group, root group or user, `/` or relative dataDir, runc without opt-in, an empty NetworkPolicy, a bad service type), two guard mutations caught (a writable root filesystem, a non-Socket socket volume), the rendered config loaded by Arcana's loader and the first `arcana doctor` checks, plus docs build and markdown lint. **Unproven:** pod startup, socket and data-directory permissions in a real cluster, probes, `helm test`, and the new CI job on GitHub. **Limits stated in the docs:** needs Docker Engine and gVisor on the node (most managed clusters have neither), sandboxes are invisible to Kubernetes, no high availability, Pod Security `privileged` namespace, plain HTTP.
-
-> T4.6 follow-up (2026-11-15, owner approved privileged containers and more effort): `scripts/kind-helm-e2e.sh` / `make helm-e2e` installs the chart on a kind cluster (v0.33, kubectl 1.37, helm 3.19, checksum-checked downloads) whose node mounts the host Docker socket and a same-path data directory. Passed from scratch: the pod starts as UID 1003 with the Docker group as a supplemental group, a read-only root and no capabilities, and passes Arcana's startup checks including the gVisor test container; a sandbox runs commands as UID 1000 through the Service; `helm test` succeeds; an upgrade replaces the pod (Recreate, config checksum) and the sandbox, its workspace and the admin key survive; uninstall leaves the sandbox running and the data in place; a wrong socket group and a wrongly owned data directory each give a clear crash-loop message (both documented). It also surfaced a real bug, fixed in `8d6f196`: every log line had `"level":"[REDACTED]"`. **Still not tested:** multi-node, other CNIs, NetworkPolicy, TLS ingress, a distribution whose node really runs Docker Engine, arm64, and the new CI jobs on GitHub (`helm`, and none yet for `helm-e2e`).
-
-> T4.5 follow-up (2026-11-15, owner approved the effort and privileged containers): the driver was run against a real containerd (v2.2 server, v2.4.2 client) started in a privileged container with a user-owned socket (`scripts/containerd-test.sh`). `TestContainerd_Lifecycle` passes on **runsc and runc**: output streams and exit code, environment, UID 1000, empty capabilities, `no_new_privs`, NOFILE, read-only root and helper, tmpfs workspace, 320 KB stdin, a terminal with its size, cancellation, stats and idempotent destroy. It found six defects fixed here: a named image USER needs a root client to mount the rootfs; the container had no command; the exec FIFO directory was root-only (`fifo_dir`); stdin was never closed in the shim; the gVisor shim ignores the console size; gVisor reports cgroup v1 metrics. Measured against the Docker driver (nested containerd, busy shared host): on runc about 2 to 3 times faster to create (81 vs 220 ms p50), exec (32 vs 72 ms) and destroy (57 vs 130 ms). **Not measured:** containerd with gVisor create latency, which shows a constant 5.1 s that plain `ctr` also shows in this nested harness and that could not be explained. Still true: network `none` and tmpfs only, no bare-host run, and not yet wired into `arcana serve`.
-
-> Driver wiring (2026-11-15, owner approved the new `runtime.driver` values): `runtime.driver` now accepts `docker`, `containerd` and `firecracker` with their own settings (PRD §13, docs/configuration.md, every key documented and tested). `internal/runtime/factory` builds the driver for `serve` and the doctor; drivers can implement `runtime.Checker` (their own prerequisites and image lookup). `arcana doctor` runs a driver-specific set for non-Docker drivers: shared host checks, the driver's check, and a real hardened sandbox proving the helper and its cleanup; startup refuses to proceed if they fail. Configurations asking for what a driver cannot do are rejected at start (allowlist default or `network_preset` with containerd or Firecracker, a disk workspace with containerd) and an `allowlist` request is refused with `invalid_request`. **Verified for containerd with real gVisor** by `scripts/containerd-serve-e2e.sh`: doctor, serve, create, exec with the remote exit code, file round trip, snapshot, fork, the refusal, restart survival and destroy. That run found a real defect (destroying one gVisor sandbox failed while others ran, because they shared a cgroup parent), fixed with a flat per-sandbox cgroup and a regression test for both runtimes. **Firecracker:** on this host without `/dev/kvm`, `arcana doctor` fails with a clear message and `serve` refuses to start; a real VM has still never run.
-
-> Volume workspace (2026-11-16, owner asked for it): the containerd driver now supports `workspace.backend: volume`, the default. A host directory per sandbox under `data_dir/containerd/workspaces` is bind-mounted at `/workspace` (`nosuid,nodev`), created before the container, removed after it, and pruned at startup (`PruneOrphans`). Because the sandbox user must own it and cannot chown, Arcana must run as root or UID 1000; any other user is refused at create with the reason, and `arcana doctor` runs a create/chown/remove probe. Verified on a real containerd with **runsc and runc** (`TestContainerd_VolumeWorkspace`, run as root inside the containerd container by `scripts/containerd-test.sh`): writes land on the host owned by UID 1000, root stays read-only, destroy removes a workspace containing a chmod 000 directory, pruning removes an orphan. The size limit is soft (watchdog), like Docker volumes. The "disk workspace with containerd" config rejection was removed. Details in ADR 0009.
-
-> Allowlist networking (2026-11-16, owner asked for it and chose the CNI + proxy-container design over a veth-pair design that would have changed PRD FR-NW-2): the containerd driver supports network mode `allowlist` when `runtime.containerd.allowlist` is on. Per sandbox: a network namespace on a private no-address bridge (fixed link-local `/29`, no route out) and a dedicated hardened proxy container (`prx-<id>`) also on a shared NAT'd egress bridge; the Docker driver's proxy control channel is now shared code (`netpolicy.Control`). CNI is driven by running the plugin binaries (`bridge`, `host-local`, `static`; no Go dependency added), namespaces by `unshare` plus a bind mount, bridge removal by one netlink request. Arcana must run as root; doctor checks plugins, proxy image, root and the egress subnet. New keys `allowlist`, `cni_bin_dir`, `egress_subnet`, `state_dir`. **Verified on a real containerd with runsc and runc** (nested, against the real internet): `TestContainerd_AllowlistNetworking`, ESC-15 to ESC-19 through the public API (`scripts/containerd-escape.sh`; a mutation giving the sandbox the egress bridge made ESC-15 fail), and a real `arcana serve` as root (`scripts/containerd-allowlist-e2e.sh`: doctor, allowed and refused requests, audit events, restart, no leftovers). Four defects found by running it: the gVisor shim resolves containers by ID prefix (`sbx-<id>-proxy` made `sbx-<id>` ambiguous), gVisor strips interface addresses so a restored proxy needs a rebuilt network, CNI DEL can fail with "no such device" after gVisor tears the interface down, and doctor flagged its own bridge's route. **Not verified:** a bare host, other CNI plugin versions or iptables backends, a default-deny `FORWARD` policy (Docker, ufw and firewalld set one; documented, needs a rule), IPv6, density and latency. Details in ADR 0010.
-
----
-
-## Decision log
-
-Append entries as `YYYY-MM-DD — decision — reason — link to ADR/PR`.
-
-- 2026-10-13 — Docker Engine API + gVisor (`runsc`) as the default runtime — ubiquitous for self-hosters, strong isolation without KVM — PRD §9
-- 2026-10-13 — File operations and snapshots run inside the sandbox via exec — avoids gVisor overlay visibility issues and host-side symlink attacks — PRD FR-FS-4, R1
-- 2026-10-13 — Exec helper `sbx-exec` for process-tree termination — Docker exec cannot signal processes — PRD §9.4
-- 2026-10-13 — No `open` network mode — keeps the security story simple and defensible — PRD FR-NW-8
-- 2026-10-13 — Project name **Arcana** (module `github.com/brendatamaar/arcana`, binary `arcana`) — chosen by owner — PRD header
-- 2026-10-13 — Minimal read-only React dashboard moved from stretch into v0.3 — makes the demo understandable at a glance; read-only keeps CSRF out of scope until T4.4 — PRD §7.14
-- 2026-10-13 — Dashboard uses cookie sessions limited to safe methods, SSE for live data — no API key in browser storage, `EventSource` works with cookies — PRD FR-WD-4…7
-
-- 2026-10-31 — Owner approved replacing T0.4(d) docker cp/docker commit experiments with exec-only read/archive round trips — validates the supported transfer path while preserving AGENTS security rule 4 and PRD FR-FS-4 — PLAN T0.4, PRD R1
-
-- 2026-10-31 — Temporary spikes/ module for Phase 0 programs; use the official github.com/moby/moby/client successor module — isolates throwaway dependencies from the production module; removed by T0.6 — T0.2
-
-- 2026-11-01 — Configure explicit outbound DNS for the proxy and attach all runsc proxy interfaces before start; recreate it when interfaces change — T0.5 verified Docker embedded DNS and hot-attached runsc interfaces do not work in this setup; internal sandbox isolation remains unchanged — docs/spikes/004-network.md, PRD FR-NW-2 and §13
-
-- 2026-11-01 — Accept ADRs 0001–0004 and remove the temporary spikes/ module — risk probes support Docker/runsc, helper bind mounts, exec-only transfer and internal-network egress; prototype helper and reusable integration fixtures remain for later hardening — docs/decisions/
-
-- 2026-11-01 — Owner approved an argv-only sbx-exec write subcommand for file uploads — shell redirection is unavailable through argv and internal shell construction remains prohibited — T1.12, PRD §9.4
-
-- 2026-11-01 — Owner approved requiring web-check from T3.7, when the dashboard and target exist — Phase 1 still runs every Go, generation and applicable security check — AGENTS workflow step 5, T1.5
-
-- 2026-11-01 — Add github.com/oapi-codegen/runtime v1.8.0 (Apache-2.0), required by the generated standard HTTP server — owner approved; owner also gave standing approval for Phase 1 implementation decisions, while security requirements and escape assertions remain mandatory — T1.5
-
-- 2026-11-01 — Use the generator companion github.com/getkin/kin-openapi (MIT) to validate the API contract in tests — reuses the generator dependency and enforces spec validity under the owner's standing approval — T1.5
-
-- 2026-11-01 — Pin the official Moby client v0.6.2 and API v1.56.1 (Apache-2.0), with containerd/errdefs (Apache-2.0) for typed daemon errors — reuse the Phase 0 validated successor modules under standing owner approval — T1.7, ADR 0001
-- 2026-11-01 — Ship a locally built v0.1 base image with UID/GID 1000 workspace ownership and reject unexpected image volumes — standard Docker copy-up provisions named volumes while retaining every non-root/readonly/host-file boundary; official multi-arch templates remain T2.1 — T1.7, PRD FR-TP-4, ADR 0003
-- 2026-11-01 — Docker instance handles use deterministic managed container names — enables idempotent volume cleanup after a container has already disappeared, with install/sandbox labels checked on each resource — T1.7
-
-- 2026-11-01 — Use child subreapers, non-dumpable controllers, pidfd identity signalling and atomic bounded metadata for helper cleanup — ordinary process groups do not cover setsid/double-fork descendants; verified kernel facilities under hardened runsc/runc — T1.8, PRD §9.4, ADR 0002
-- 2026-11-01 — Separate helper transport exits (0 completed success / 124 completed nonzero / 125 helper error) from user command exit metadata — prevents helper signals/runtime faults being accepted as ordinary command failure after status tampering; public API and arcana exec retain the real exit code; owner standing approval applied — T1.8, PRD §9.4
-- 2026-11-01 — Commit reproducible static linux/amd64 and linux/arm64 helper assets plus checksum manifest — enables go install without an external compiler at serve time; generation/freshness checks rebuild them with the pinned Go toolchain, CGO disabled and build paths/IDs removed — T1.8
-
-- 2026-11-01 — Explicit exec mount option for tmpfs /workspace — Docker defaults tmpfs to noexec, preventing sandbox build artifacts from running; nosuid/nodev, resource limits and all container hardening remain enforced — T1.8, PRD FR-RL-3
-
-- 2026-11-01 — Add an append-only sandbox transition table, committed atomically with state changes — preserves timestamps/reasons for intermediate lifecycle stages required by FR-LC-3; quota reservation occurs in the creating-row transaction — T1.9, PRD §11
-
-- 2026-11-01 — Bound cancellation proof to 10 seconds and retain valid completed-run proof when kill/status consumption races — prevents orphaned long-lived execs while preserving confirmed cleanup; uncertain status/transport destroys the sandbox — T1.10, PRD §9.4
-
-- 2026-11-01 — Account separately for the canonical helper argv prefix while retaining the raw driver cap — supports the existing OpenAPI limit of 256 user arguments without removing any bound; env/label entry limits align with the contract limit of 100 — T1.10
-
-- 2026-11-02 — Use coder/websocket v1.8.15 (ISC) already required by the pinned Goose graph — approved WebSocket dependency with concurrency-safe reads/writes and default same-origin checks; retain Goose v3.29.0 unchanged — T1.11
-
-- 2026-11-02 — Reuse supervised exec for interactive streams, with bounded transport queues/deadlines and 1000 connection admission slots — preserves cleanup proof, quotas and records while preventing pending-start/slow-reader growth; streaming output is forwarded without retaining a sync capture buffer — T1.11, PRD §10.4
-
-- 2026-11-02 — Reuse supervised exec for bounded argv-only file utilities and opaque tar streams — shares cleanup/quota/deadline enforcement while preserving the host filesystem boundary; atomic writes, descriptor-sized reads and bounded listings prevent partial replacements and unbounded output — T1.12, PRD FR-FS-1…5, ADR 0003
-
-- 2026-11-02 — Reconcile before listener admission, preserve healthy instances, and fail closed on unfinished exec records after daemon crashes — lost supervision cannot prove process cleanup; close records only after resource removal and leave unknown exit codes NULL. Run independent joined reaper/watchdog loops; watchdog uses supervised bounded du without idle activity updates — T1.13, PRD FR-LC-8 and NFR-REL-1.
-
-- 2026-11-02 — Public Go client uses generated wire-model aliases, finite configurable response/transfer limits, no redirects or automatic mutation retries, and context-owned WebSocket readers/control methods — preserves API compatibility and bounded memory; real-HTTP client tests also found that file-body EOF must suppress a cancellation deadline so a successful upload can finish its response — T1.14, PRD FR-SD-1.
-
-- 2026-11-02 — CLI exec requires explicit argv separation and uses context-owned stream readers; stdin is opt-in except for TTY, and JSON exec emits terminal metadata after draining output — prevents leaked stdin readers and mixed JSON/binary output. Linux TTY uses stdlib ioctl/raw-mode handling without a new dependency; named downloads use exclusive 0600 creation — T1.15, PRD FR-CL-1/2.
-
-- 2026-11-02 — Doctor probes the selected runtime with a hardened tmpfs container and helper completion proof, after startup reconciliation and before listener admission — avoids orphan-related resource starvation and checks required subreaper/pidfd facilities. Missing individual images warn without automatic pulls; at least one installed template is needed for runtime proof. Explicit runc opt-in preserves advisory runsc checks and mandatory runc proof — T1.16, FR-DR-1…3.
-
-- 2026-11-03 — Escape suite uses public API attacks, test-only setuid fixtures and container-scoped kernel counters — observed runsc returning ENOMEM when PID cgroup denials increment, so ESC-01 requires PID-counter evidence with no OOM kills and either helper completion or fail-closed destruction. CPU latency waits for an active-spin marker; volume assertions wait for terminal disk_quota cleanup. CI requires runsc and fails on missing registration — T1.17, PRD §12.4.
-
-- 2026-11-03 — Validate the marked README quickstart blocks verbatim on a fresh Ubuntu 24.04 GitHub-hosted VM with Go/Docker prerequisites, plus the authorized VPS — avoids documentation drift while exercising go install, runsc Doctor, daemon startup, first exec, file round trip and cleanup with new private state. The demo explicitly opts into destroy_on_shutdown; production defaults remain unchanged — T1.18, README, scripts/check_quickstart.py.
-
-- 2026-11-08 — Use one isolated proxy per allowlist sandbox and exec-bridged private Unix control; preserve internal IP/MAC on recreation — keeps each complete runsc network set fixed, avoids host Unix-socket visibility assumptions and preserves healthy sandbox neighbour caches; owner-approved audit sequencing emits bounded events in T2.4 and persists them in T2.5 — PRD FR-NW-2/7, docs/networking.md.
-
-- 2026-11-08 — Persist audit metadata through a bounded asynchronous queue, with API-key redaction, timestamp/ID pagination and startup/daily retention — completes the approved T2.4/T2.5 audit sequence without blocking request paths; deletion sizes are observed inside the sandbox — PRD FR-AD-1/2, docs/audit.md.
-
-- 2026-11-09 — Owner approved ESC-03 host cgroup CPU accounting with the unchanged 1500 ms ceiling, explicit 0.25 CPU quota and throttling proof, and unchanged attack/peer checks — guest getrusage diverges from controller accounting under runsc; no resource policy or ceiling changed — docs/spikes/005-cpu-accounting.md, PRD §12.4.
-
-- 2026-11-09 — Use the approved Apache-2.0 Prometheus client_golang v1.25.0 with an isolated registry, bounded labels and a separate listener; pin monitoring images by digest — reproducible self-hosting with explicit lifecycle ownership and no credentials in labels — T2.6, docs/compose-validation.md.
-
-- 2026-11-12 — Snapshots store opaque archives under `data_dir/snapshots` with a size/SHA-256 record; a restore re-hashes the archive on the descriptor it streams and extracts only inside the sandbox; env values are never stored; a failed restore destroys the new sandbox with reason `restore_failed`; restores bypass the warm pool — keeps AGENTS rule 4 (host never extracts), makes tampering detectable, and honours "env values are never persisted" — T3.1, PRD FR-SN-1…5.
-
-- 2026-11-12 — Fork returns `201` with `items` and per-index `failures` when at least one member was created, else the first failure's error; each member consumes one creation token and runs through the normal quota path; created members are destroyed if the client disconnects — PRD §10 only named the endpoint, so this defines its shape and keeps partial failure visible without leaking orphans — T3.1, PRD §10.2.
-
-- 2026-11-12 — Snapshot byte and count budgets are reserved before streaming (in-flight snapshots count) — concurrent requests cannot overshoot `snapshots.max_per_key` or `snapshots.max_total_bytes`; no new dependency was needed — T3.1.
-
-- 2026-11-12 — Use the approved MCP Go SDK v1.8.0 (Apache-2.0/MIT) and accept its transitive modules: google/jsonschema-go (MIT), segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3), golang.org/x/oauth2 and x/time (BSD-3) — they are required to build the SDK, all permissive and Apache-2.0 compatible; no other dependency added — T3.2.
-
-- 2026-11-12 — SDK dependencies approved by the owner: openapi-typescript, openapi-fetch and `ws` (TypeScript); openapi-python-client (pinned with ruff), httpx2, attrs and `websockets` (Python); Node built-in test runner and `unittest` instead of Vitest/pytest — generated layers committed, wrappers hand-written for streaming, raw bodies and errors — T3.3, docs/decisions/0005-sdk-generation.md.
-
-- 2026-11-15 — `envd` is a gRPC daemon built from the `sbx-exec` code: the controller and file utilities moved to `internal/sbxexec` and the daemon re-runs itself as controller and file utility — one static binary for the microVM rootfs, and the proven subreaper/pidfd cleanup, completion proof and path validation are reused unchanged; transport (private Unix socket or host-only vsock) is the trust boundary, so no TLS — T4.1, ADR 0006, PRD §9.4.
-
-- 2026-11-15 — Add `google.golang.org/grpc` and `google.golang.org/protobuf` (promoted from indirect), `golang.org/x/sys` (BSD-3, raw `AF_VSOCK`/pty ioctls instead of a vsock library), and, as code-generation tools, `github.com/bufbuild/protocompile` (Apache-2.0, pure Go) with the pinned `protoc-gen-go` and `protoc-gen-go-grpc` — owner approved the first three explicitly and protocompile as the proto compiler, so `make verify-generated` needs no `protoc` install — T4.1, scripts/genproto.
-
-- 2026-11-15 — The Firecracker driver talks to Firecracker's REST API with the standard library instead of `firecracker-go-sdk` — six JSON PUTs are all it needs, the SDK is v1.0.0 (2022), would grow the module graph from 314 to 569 entries, and its jailer chroot handling cannot be checked without KVM; the SDK stays approved if snapshots or rate limiters need it — T4.2, ADR 0007.
-
-- 2026-11-15 — Add `ARCANA_ESCAPE_RUNTIME=runc` to the escape suite as a comparison mode (default runsc, refused when `ARCANA_REQUIRE_RUNSC=1`, banner in the log) — lets the runtime comparison show that the suite does not distinguish runc from runsc; no attack or assertion changed, so AGENTS rule 11 is untouched — T4.3, docs/runtime-comparison.md.
-
-- 2026-11-15 — Cookie sessions reach an allowlist of dashboard routes and need a matching `Origin` plus a per-session CSRF token for writes, and the admin key typed again for key management; exec, the exec stream, files and archives never accept a cookie — relaxes FR-WD-5 and AGENTS rule 12 as T4.4 anticipates (owner chose the design); the CSRF token is derived (`HMAC(token hash)`) rather than stored, so a reload can fetch it without a new column; closes a v0.3 gap where a same-origin cookie reached exec-stream and file reads — T4.4, ADR 0008.
-
-- 2026-11-15 — Add `github.com/containerd/containerd/v2` v2.4.2 (Apache-2.0) for the containerd driver; the driver builds the OCI spec itself and supports network mode `none` and tmpfs workspaces only — owner approved the dependency and an unverified build; the module graph grows from 314 to 455 entries but only an unimported package uses it — T4.5, ADR 0009.
-
-- 2026-11-15 — The Helm chart is one Deployment pinned to one node, not a DaemonSet — PRD called it "DaemonSet-style" but a DaemonSet would run an independent Arcana, database and Docker Engine per node; PLAN says single-node, and one pinned replica with the `Recreate` strategy is the safe reading. The data directory is a `hostPath` mounted at the same path, because the helper bind-mount source is resolved by the node's Docker Engine — T4.6, docs/kubernetes.md, PRD §14.
-
-## Open questions
-
-
-Append entries as `YYYY-MM-DD — question — context — blocking task (if any)`.
-
-- 2026-10-31 — Resolved: owner supplied and authorized an experimental VPS; SSH, Docker, runsc and GitHub push access verified. CI passed for T0.1.
-- 2026-10-31 — Resolved by owner: replace T0.4(d) docker cp/docker commit experiments with byte-identical read/archive round trips through exec; no security exception is introduced.
-
-- 2026-11-01 — Resolved by owner approval: use a stdlib-only sbx-exec write subcommand with shared path validation, preserving the internal-shell ban. Original question: T1.12 specifies file writes as `stdin → cat > path` via argv, but shell redirection cannot execute through argv alone; introducing an internal shell string conflicts with AGENTS security rule 3. May T1.12 use a stdlib-only sbx-exec write subcommand (with the shared path validation) instead? Owner approved 2026-11-01; Phase 1 resumed.
-
-- 2026-11-01 — Resolved by owner approval: defer web-check until T3.7; retain all Go, generation and security checks. Original question: May the AGENTS workflow require make web-check for OpenAPI changes only from T3.7, when the dashboard/target exist? T1.5 cannot satisfy the current unconditional check: make web-check fails because no target exists. All Go, generation and security checks would remain required. Owner approved 2026-11-01; T1.5 resumed.
-
-- 2026-11-01 — Resolved by owner approval: add the Apache-2.0 companion runtime and continue. Original question: Approve github.com/oapi-codegen/runtime v1.8.0, the companion dependency imported by the approved oapi-codegen std-http-server generator? It is absent from the approved list; cannot compile or verify T1.5 without it. Owner approved 2026-11-01; T1.5 resumed.
-
-- 2026-11-08 — Resolved: owner supplied Git author brendatamaar <brendatama10@gmail.com>; configured repository-local identity and resumed T2.1 commit.
-
-- 2026-11-08 — Resolved by owner approval: T2.4 may implement bounded proxy decision events, with durable audit storage/wiring in T2.5; both tasks are complete and FR-NW-7 is implemented.
-
-- 2026-11-09 — Resolved by owner approval and successful verification: the proposed ESC-03 cgroup CPU accounting/throttling checks while retaining the attack, 1500 ms ceiling and peer-health assertions? The existing guest timing assertion repeatedly failed; controlled measurements differ from cgroup-backed CPU usage, but the failing suite run was not instrumented. No escape test was weakened — docs/spikes/005-cpu-accounting.md; T2.5 is complete.
-
-- 2026-11-09 — Owner approved the proposed ESC-03 cgroup accounting check; retain the CPU attack, 1500 ms ceiling and peer-health assertions, and additionally assert configured quota and throttling — docs/spikes/005-cpu-accounting.md.
-
-- 2026-11-09 — Resolved: approved cgroup-based ESC-03 checks passed in isolation and the full escape suite; T2.5 verification is complete.
-
-- 2026-11-12 — Docs site uses VitePress 1 (MIT), named in the T3.8 task, as the only docs dependency (`docs/package.json`, lockfile committed); recordings use VHS, ttyd and ffmpeg as local tools that are not repository dependencies — T3.8.
-
-- 2026-11-12 — Dashboard frontend dependencies (beyond the AGENTS list, all MIT/Apache-2.0/ISC): `@tailwindcss/vite` (Tailwind 4's official integration), `jsdom` (the test DOM for Vitest and Testing Library), `typescript-eslint`, `@eslint/js` and `globals` (infrastructure for the approved ESLint), and the type packages `@types/react`, `@types/react-dom`, `@types/node`. No React Vite plugin is used (esbuild's automatic JSX runtime), no `jest-dom`, no component or state library. Majors are pinned conservatively (Vite 7, TypeScript 5.9, ESLint 9, Vitest 3, MSW 2, React Router 7) rather than the newest available — T3.7.
-
-- 2026-11-12 — Add `GET /v1/sandboxes/{id}/history` (state transitions, owner-filtered, readable with a cookie) — FR-WD-2 requires a state history on the detail page but T3.6 exposed no endpoint for the `sandbox_transitions` data; the addition is read-only and additive, and is listed in PRD §10.1 and FR-WD-8 — T3.7.
-
-- 2026-11-12 — Dashboard backend: cookie sessions authorize only GET/HEAD and logout and require same-origin proof (Origin match or Sec-Fetch-Site same-origin); Authorization always wins over the cookie; events are metadata-only and owner-filtered with pool events admin-only; output tails are in-memory rings with retention and caps; an unknown exec returns sandbox_not_found rather than adding an error code — keeps FR-WD-5 and FR-EX-8 intact without extending the PRD §10.3 code list — T3.6, docs/events.md.
-
-- 2026-11-12 — OPEN (T3.4): run `make eval-agent` with a real local model (FIXAGENT_BASE_URL/FIXAGENT_MODEL, e.g. Ollama) and record the table and failures in docs/agent-results.md, for single-attempt and `--parallel 4`. The build environment had no model endpoint and ~1 GB RAM, so the acceptance item "runs end-to-end on at least one fixture with a local model; results recorded including failures" is unmet; no results were invented. Owner chose to leave this pending. Does not block T3.5–T3.7; T3.8 needs the real results for its demo recording.
-
-- 2026-11-12 — Resolved by owner: T3.3 SDK dependencies (generated clients plus `ws`/`websockets` for streaming) approved; see ADR 0005.
-- 2026-11-12 — Resolved by owner approval (push and tag done) — May I push `main` and tag `v0.3.0`? CI for Phase 3 (sdk, web, docs, goreleaser, Pages) has never run, and the T3.10 Verify step needs it; the T3.9 Codespaces check and real-model fix-agent run (T3.4) also remain unverified. — blocking T3.10.
-- 2026-11-12 — Open — Enable GitHub Pages (Settings → Pages → Source: GitHub Actions) so the Docs workflow can deploy the site; no real-model fix-agent run (owner has no endpoint) and no Codespaces check (owner cannot) — T3.8/T3.4/T3.9 caveats.
-- 2026-11-15 — Resolved by owner: T4.1 may use gRPC and protobuf (not on the approved list), raw `AF_VSOCK` syscalls through `golang.org/x/sys` instead of a vsock library, and protocompile as a pinned `go tool`-driven proto compiler — T4.1.
-- 2026-11-15 — OPEN (T4.2): needs a KVM host (for example a VPS with nested virtualization, a Firecracker-compatible kernel and a rootfs from `scripts/build-rootfs.sh`) to run `TestRealFirecracker` and confirm the jailer layout, guest init, privilege drop and vsock. Also undecided: (a) wiring the driver into `arcana serve`, config, doctor, reconciliation and templates, (b) allowlist networking for microVMs (tap devices and the egress proxy), (c) whether memory snapshots are wanted given FR-SN-2 (workspace-only), (d) having the orchestrator use `envd`'s native exec instead of the nested `sbx-exec` controller. Blocks the Firecracker column of T4.3.
-- 2026-11-15 — OPEN (T4.3): the Firecracker column of the runtime comparison, and a benchmark rerun on a quiet reference host (the T4.3 runs shared a loaded 2 vCPU VM), are still missing. Depends on the T4.2 open question about a KVM host and wiring the driver into `arcana serve`.
-- 2026-11-15 — Resolved by owner (T4.4): synchronizer token, and key management for admin sessions only with the admin key re-entered.
-- 2026-11-15 — OPEN (found in T4.4): the sandbox exec history (`GET /v1/sandboxes/{id}/execs`) includes the server's own workspace watchdog scans (`du`), so the dashboard shows commands nobody ran; PRD FR-WD-6 says events exclude them but the history does not. The log viewer now stays on the exec it started with. Should internal scans be hidden from history, or labelled? — T3.6/T1.13.
-- 2026-11-15 — OPEN (found in T4.4): `TestMaintain_ContextOwnsLoopAndJoins` (internal/orchestrator) is flaky under load: it reads the first fake-clock timer and sometimes gets a 1 ms one from another loop. It also fails on the commit before T4.4. Not changed.
-- 2026-11-15 — Resolved by owner (T4.5): approve the containerd v2 client and build the driver without a containerd to test against.
-- 2026-11-15 — OPEN (T4.5): needs a host where I can reach containerd (a user in a group that owns `/run/containerd/containerd.sock`, or root) to run the driver for real and measure it against the Docker driver. (The volume backend and allowlist networking were built on 2026-11-16, see the T4.5 notes; serve wiring is done.)
-- 2026-11-15 — OPEN (T4.6): install the chart on a real single-node cluster whose node runs Docker Engine with gVisor (for example k3s with `--docker`, or a kubeadm node with cri-dockerd) and confirm startup, permissions, probes and `helm test`; the CI `helm` job has not run on GitHub either. Also: most clusters have no Docker Engine, so the chart is of limited use until the containerd driver (T4.5) is wired into `serve`.
-- 2026-11-15 — Resolved: the exec history hides workspace scans and file transfers (`execs.internal`, migration 00006); they stay recorded per FR-EX-8 and are still excluded from live events. Owner agreed to the fix; the dashboard needed no change.
-- 2026-11-15 — Resolved: `TestMaintain_ContextOwnsLoopAndJoins` assumed the first fake-clock timer was the reaper's; it now reads timers until the reaper's and the watchdog's both appear and requires the join. It failed on the old version and passed 120 runs on the new one with two CPU hogs running.
-- 2026-11-15 — Resolved in part (T4.6): the chart was installed on a real (kind) cluster and works; the host Docker was the node runtime, so a distribution with its own Docker Engine, other CNIs and multi-node remain untested.
-- 2026-11-15 — Resolved in part (T4.5): the driver was verified on a real containerd without root (privileged container, user-owned socket). Open: a bare-host run, the gVisor create latency under containerd, a volume backend, allowlist networking, and serve wiring (in progress).
-- 2026-11-15 — Resolved: the Firecracker and containerd drivers are selectable through `runtime.driver` and wired into `serve`, the doctor and config validation (owner approved the config values). Still open: a KVM host to boot a real microVM, allowlist networking for Firecracker, and a bare-host containerd run (also covering the host-firewall case for containerd allowlist networking).
+## P4 - Stretch runtimes & platform
+Status: done
+Depends on: P3
+Parallel-safe with: -
+
+### Goal
+Menambahkan kapabilitas lanjutan: daemon `envd` gRPC, driver Firecracker, perbandingan runtime, dashboard web full write+CSRF, driver `containerd` (termasuk volume & allowlist CNI), dan Helm chart single-node.
+
+### Handoff notes
+- Selesai hingga commit `cf72d8a` (T4.1–T4.6 + follow-up wiring `runtime.driver`, `containerd` volume & allowlist CNI, Helm kind e2e, dan perbaikan logging/flaky test `8d6f196`/`d4ac35a`/`bb4dd78`). Belum ada tag rilis `v0.4.0`.
+- Komponen kunci: `cmd/envd` & `internal/envd`, `internal/sbxexec`, `cmd/arcana-init`, `internal/runtime/firecracker`, `internal/runtime/containerd`, `internal/runtime/factory`, `deploy/helm/arcana`, `ESC-25`–`27` (CSRF/cookie allowlist).
+- Catatan `OPEN` tersisa (kandidat fase P5 bila dibutuhkan):
+  - **Firecracker (T4.2/T4.3)**: belum pernah boot di host `/dev/kvm` nyata (`TestRealFirecracker`, jailer, guest init, vsock, kolom benchmark Firecracker); belum ada allowlist networking atau memory snapshots.
+  - **containerd (T4.5)**: terverifikasi di containerd nested (`scripts/containerd-*.sh` pada `runsc` & `runc`), namun belum diuji di bare-host, host dengan default-deny `FORWARD` firewall, atau diukur latensi create `runsc` bare-host.
+  - **Helm (T4.6)**: terverifikasi end-to-end di `kind` (`make helm-e2e`), namun multi-node, CNI lain, TLS ingress, dan CI `helm-e2e` belum diuji.
+  - **Rilis**: bila ingin merilis fitur P4 sebagai `v0.4.0`, buat fase baru untuk verifikasi CI penuh, update README/CHANGELOG, dan tagging.

@@ -293,6 +293,6 @@ runner with the documented prerequisites, then runs the integration/escape suite
 To work in a ready-made environment (Codespaces or Dev Containers), see the
 [development container](docs/devcontainer.md).
 
-Read [AGENTS.md](docs/AGENTS.md), [PRD.md](docs/PRD.md), and [PLAN.md](docs/PLAN.md)
+Read [AGENTS.md](AGENTS.md), [PRD.md](docs/PRD.md), [PLAN.md](docs/PLAN.md), and [DECISIONS.md](docs/DECISIONS.md)
 before contributing. See the [changelog](CHANGELOG.md) and [architecture decisions](docs/decisions).
 Licensed under [Apache-2.0](LICENSE).

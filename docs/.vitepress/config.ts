@@ -11,7 +11,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   // Project-internal planning documents stay in the repository and out of the published site.
-  srcExclude: ["AGENTS.md", "PLAN.md", "PRD.md", "node_modules/**", "tapes/**", "benchmarks/*.md"],
+  srcExclude: ["AGENTS.md", "DECISIONS.md", "PLAN.md", "PRD.md", "node_modules/**", "tapes/**", "benchmarks/*.md"],
   themeConfig: {
     nav: [
       { text: "Get started", link: "/quickstart" },
@@ -44,7 +44,7 @@ export default defineConfig({
       },
       { text: "Security", items: [{ text: "Security model", link: "/security" }, { text: "Escape suite", link: "/escape-v1" }] },
       { text: "Performance", items: [{ text: "Benchmarks", link: "/benchmarks" }, { text: "Runtime comparison", link: "/runtime-comparison" }, { text: "Reference agent results", link: "/agent-results" }] },
-      { text: "Design", items: [{ text: "Architecture", link: "/architecture" }, { text: "Decision records", link: "/decisions" }, { text: "Development container", link: "/devcontainer" }] },
+      { text: "Design", items: [{ text: "Architecture", link: "/architecture" }, { text: "Decision records", link: "/adrs" }, { text: "Development container", link: "/devcontainer" }] },
     ],
     socialLinks: [{ icon: "github", link: repo }],
     editLink: { pattern: `${repo}/edit/main/docs/:path`, text: "Edit this page on GitHub" },
@@ -52,5 +52,5 @@ export default defineConfig({
     footer: { message: "Released under the Apache-2.0 License.", copyright: "Arcana" },
   },
   // The OpenAPI contract and project documents live in the repository, not the site.
-  ignoreDeadLinks: [/^\.\.\//, /\/(PRD|PLAN|AGENTS)(\.md)?$/, /^\.\/(PRD|PLAN|AGENTS)/],
+  ignoreDeadLinks: [/^\.\.\//, /\/(PRD|PLAN|AGENTS|DECISIONS)(\.md)?$/, /^\.\/(PRD|PLAN|AGENTS|DECISIONS)/],
 });
